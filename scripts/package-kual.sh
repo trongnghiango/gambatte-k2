@@ -27,18 +27,15 @@ BIN_SRC="${1:-}"
 if [ -n "$BIN_SRC" ] && [ -f "$BIN_SRC" ]; then
     cp "$BIN_SRC" "$DIST_DIR/bin/gambatte-k2"
     chmod +x "$DIST_DIR/bin/gambatte-k2"
-    echo "  ✓ Đã nạp binary từ đối số: $BIN_SRC"
-elif [ -f "$ROOT_DIR/bin/gambatte-k2" ]; then
-    cp "$ROOT_DIR/bin/gambatte-k2" "$DIST_DIR/bin/gambatte-k2"
-    chmod +x "$DIST_DIR/bin/gambatte-k2"
-    echo "  ✓ Đã nạp binary: $ROOT_DIR/bin/gambatte-k2"
+    echo "  ✓ Đã nạp binary: $BIN_SRC"
 elif [ -f "$ROOT_DIR/builddir_kindlehf/gambatte-k2" ]; then
     cp "$ROOT_DIR/builddir_kindlehf/gambatte-k2" "$DIST_DIR/bin/gambatte-k2"
     chmod +x "$DIST_DIR/bin/gambatte-k2"
     echo "  ✓ Đã nạp binary: $ROOT_DIR/builddir_kindlehf/gambatte-k2"
-else
-    echo "  [ERROR] Không tìm thấy binary gambatte-k2!"
-    exit 1
+elif [ -f "$ROOT_DIR/bin/gambatte-k2" ]; then
+    cp "$ROOT_DIR/bin/gambatte-k2" "$DIST_DIR/bin/gambatte-k2"
+    chmod +x "$DIST_DIR/bin/gambatte-k2"
+    echo "  ✓ Đã nạp binary: $ROOT_DIR/bin/gambatte-k2"
 fi
 
 # 4. Sao chép libretro cores
@@ -47,15 +44,23 @@ if [ -d "$ROOT_DIR/cores" ]; then
     echo "  ✓ Đã nạp libretro cores"
 fi
 
-# 5. Đóng gói ZIP chuẩn /mnt/us/extensions/gambatte-k2
-cd "$ROOT_DIR/dist"
-zip -r "$OUTPUT_ZIP" gambatte-k2/
-cd "$ROOT_DIR"
+# 5. Đóng gói ZIP bằng python3 zipfile
+python3 -c "
+import os, zipfile
+dist_base = '$ROOT_DIR/dist'
+zip_path = '$OUTPUT_ZIP'
+with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk(dist_base):
+        for f in files:
+            fp = os.path.join(root, f)
+            arcname = os.path.relpath(fp, dist_base)
+            zf.write(fp, arcname)
+print('Package created:', zip_path)
+"
+
 rm -rf "$ROOT_DIR/dist"
 
 echo "=========================================================="
 echo "  ĐÓNG GÓI THÀNH CÔNG: $OUTPUT_ZIP"
-if [ -f "$OUTPUT_ZIP" ]; then
-    ls -lh "$OUTPUT_ZIP"
-fi
+ls -lh "$OUTPUT_ZIP"
 echo "=========================================================="
