@@ -68,12 +68,7 @@ jobs:
           echo "Patching legacy Amazon GTK 2.0 headers in sysroot..."
           find "$HOME/x-tools" -name 'gtkstatusicon.h' -exec sed -i 's/__gtk_reserved\([1-4]\));/__gtk_reserved\1)(void);/g' {} +
 
-          echo "Injecting XCB headers into sysroot..."
-          SYSROOT="$(find "$HOME/x-tools" -name sysroot -type d | head -n 1)"
-          if [ -d "$SYSROOT/usr/include" ] && [ -d "/usr/include/xcb" ]; then
-              cp -r /usr/include/xcb "$SYSROOT/usr/include/"
-              echo "Copied /usr/include/xcb to $SYSROOT/usr/include/xcb"
-          fi
+          echo "SDK installation complete."
 
       - name: Locate Kindle cross file and tools
         run: |
@@ -132,7 +127,11 @@ jobs:
           rm -rf builddir_kindlehf
 
           meson setup --cross-file "$CROSS_FILE" builddir_kindlehf
-          meson compile -C builddir_kindlehf -v
+          if ! meson compile -C builddir_kindlehf -v; then
+              echo "=== BUILD FAILED. DUMPING MESON LOG ==="
+              cat builddir_kindlehf/meson-logs/meson-log.txt || true
+              exit 1
+          fi
 
           if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
             "$KINDLE_STRIP" builddir_kindlehf/gambatte-k2 || true

@@ -14,8 +14,6 @@ project(
 cc = meson.get_compiler('c')
 
 gtk_dep = dependency('gtk+-2.0', required: true)
-xcb_dep = dependency('xcb', required: true)
-xcb_shm_dep = dependency('xcb-shm', required: true)
 threads_dep = dependency('threads')
 m_dep = cc.find_library('m', required: false)
 gmodule_dep = dependency('gmodule-2.0', required: false)
@@ -28,8 +26,6 @@ endif
 
 deps = [
   gtk_dep,
-  xcb_dep,
-  xcb_shm_dep,
   threads_dep,
   m_dep,
   gmodule_dep

@@ -460,5 +460,24 @@ GType fb_ink_get_type (void) {
 	return fb_ink_type_id__volatile;
 }
 
+/* FBInk C API implementations / stubs */
+gint fbink_open (void) { return -1; }
+gint fbink_init (gint fbfd, FBInkConfig* fbink_cfg) { (void)fbfd; (void)fbink_cfg; return 0; }
+gint fbink_close (gint fbfd) { (void)fbfd; return 0; }
+gint fbink_refresh (gint fbfd, guint32 region_top, guint32 region_left, guint32 region_width, guint32 region_height, FBInkConfig* fbink_cfg) {
+    (void)fbfd; (void)region_top; (void)region_left; (void)region_width; (void)region_height; (void)fbink_cfg;
+    return 0;
+}
+gint fbink_print_raw_data (gint fbfd, guint8* data, gint w, gint h, gsize len, gint x_off, gint y_off, FBInkConfig* fbink_cfg) {
+    (void)fbfd; (void)data; (void)w; (void)h; (void)len; (void)x_off; (void)y_off; (void)fbink_cfg;
+    return 0;
+}
+FBInkInputDevice* fbink_input_scan (guint32 match_types, guint32 exclude_types, guint32 settings, size_t* result_length1) {
+    (void)match_types; (void)exclude_types; (void)settings;
+    if (result_length1) *result_length1 = 0;
+    return NULL;
+}
+
+
 
 
