@@ -34,7 +34,7 @@ jobs:
             build-essential autoconf automake bison flex gawk \
             libtool libtool-bin libncurses-dev curl file git gperf \
             help2man texinfo unzip wget sed libarchive-dev nettle-dev \
-            pkg-config zip python3 make binutils patchelf \
+            meson ninja-build pkg-config zip python3 make binutils patchelf \
             libxcb1-dev libxcb-shm0-dev
 
       - name: Download prebuilt Kindle toolchain
@@ -68,9 +68,15 @@ jobs:
           echo "Patching legacy Amazon GTK 2.0 headers in sysroot..."
           find "$HOME/x-tools" -name 'gtkstatusicon.h' -exec sed -i 's/__gtk_reserved\([1-4]\));/__gtk_reserved\1)(void);/g' {} +
 
-      - name: Locate Kindle cross tools
+      - name: Locate Kindle cross file and tools
         run: |
           set -euxo pipefail
+
+          echo "Searching for Meson cross file..."
+          CROSS_FILE="$(find "$HOME/x-tools" -name meson-crosscompile.txt | head -n 1)"
+          test -f "$CROSS_FILE"
+          echo "CROSS_FILE=$CROSS_FILE" >> "$GITHUB_ENV"
+          echo "Using cross file: $CROSS_FILE"
 
           echo "Searching for Kindle C compiler..."
           CC_COMPILER="$(find "$HOME/x-tools" -type f -name '*gcc' | grep '/bin/' | head -n 1)"
@@ -88,12 +94,6 @@ jobs:
           STRIPPER="$(find "$HOME/x-tools" -type f -name '*strip' | grep '/bin/' | head -n 1 || true)"
           echo "KINDLE_STRIP=$STRIPPER" >> "$GITHUB_ENV"
           echo "Using strip tool: $STRIPPER"
-
-          echo "Locating sysroot..."
-          SYSROOT="$(find "$HOME/x-tools" -name sysroot -type d | head -n 1)"
-          test -d "$SYSROOT"
-          echo "KINDLE_SYSROOT=$SYSROOT" >> "$GITHUB_ENV"
-          echo "Using sysroot: $SYSROOT"
 
       - name: Build Gambatte Libretro Core for Kindle ARMv7
         run: |
@@ -122,22 +122,18 @@ jobs:
         run: |
           set -euxo pipefail
 
-          echo "Configuring cross compilation pkg-config..."
-          export PKG_CONFIG_PATH="$KINDLE_SYSROOT/usr/lib/pkgconfig:$KINDLE_SYSROOT/usr/share/pkgconfig"
-          export PKG_CONFIG_LIBDIR="$KINDLE_SYSROOT/usr/lib/pkgconfig"
-          export PKG_CONFIG_SYSROOT_DIR="$KINDLE_SYSROOT"
+          rm -rf builddir_kindlehf
 
-          make clean
-          make CC="$KINDLE_CC" \
-               CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function --sysroot=$KINDLE_SYSROOT"
+          meson setup --cross-file "$CROSS_FILE" builddir_kindlehf
+          meson compile -C builddir_kindlehf
 
           if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
-            "$KINDLE_STRIP" bin/gambatte-k2 || true
+            "$KINDLE_STRIP" builddir_kindlehf/gambatte-k2 || true
           fi
 
           echo "Inspecting compiled ARMv7 binary:"
-          file bin/gambatte-k2
-          ls -lh bin/gambatte-k2
+          file builddir_kindlehf/gambatte-k2
+          ls -lh builddir_kindlehf/gambatte-k2
 
       - name: Package KUAL extension
         run: |
@@ -146,7 +142,7 @@ jobs:
           chmod +x scripts/package-kual.sh
           chmod +x extension/gambatte-k2/bin/start.sh
 
-          ./scripts/package-kual.sh
+          ./scripts/package-kual.sh builddir_kindlehf/gambatte-k2
 
       - name: Upload KUAL zip artifact
         uses: actions/upload-artifact@v4

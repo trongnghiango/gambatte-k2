@@ -21,7 +21,16 @@ chmod +x "$DIST_DIR/bin/start.sh"
 cp "$ROOT_DIR/config.ini" "$DIST_DIR/"
 
 # 3. Sao chép binary thực thi
-if [ -f "$ROOT_DIR/bin/gambatte-k2" ]; then
+BIN_SRC="${1:-}"
+if [ -n "$BIN_SRC" ] && [ -f "$BIN_SRC" ]; then
+    cp "$BIN_SRC" "$DIST_DIR/bin/gambatte-k2"
+    chmod +x "$DIST_DIR/bin/gambatte-k2"
+    echo "  ✓ Đã nạp binary: $BIN_SRC"
+elif [ -f "$ROOT_DIR/builddir_kindlehf/gambatte-k2" ]; then
+    cp "$ROOT_DIR/builddir_kindlehf/gambatte-k2" "$DIST_DIR/bin/"
+    chmod +x "$DIST_DIR/bin/gambatte-k2"
+    echo "  ✓ Đã nạp binary: $ROOT_DIR/builddir_kindlehf/gambatte-k2"
+elif [ -f "$ROOT_DIR/bin/gambatte-k2" ]; then
     cp "$ROOT_DIR/bin/gambatte-k2" "$DIST_DIR/bin/"
     chmod +x "$DIST_DIR/bin/gambatte-k2"
     echo "  ✓ Đã nạp binary: $ROOT_DIR/bin/gambatte-k2"
