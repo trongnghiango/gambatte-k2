@@ -127,9 +127,18 @@ jobs:
           rm -rf builddir_kindlehf
 
           meson setup --cross-file "$CROSS_FILE" builddir_kindlehf
-          if ! meson compile -C builddir_kindlehf -v; then
-              echo "=== BUILD FAILED. DUMPING MESON LOG ==="
-              cat builddir_kindlehf/meson-logs/meson-log.txt || true
+          if ! ninja -C builddir_kindlehf -j 1 -v; then
+              echo "=== NINJA BUILD FAILED ==="
+              mkdir -p /tmp/ci_debug
+              echo "=== MESON LOG ===" > /tmp/ci_debug/error.txt
+              cat builddir_kindlehf/meson-logs/meson-log.txt >> /tmp/ci_debug/error.txt 2>&1 || true
+              git checkout -B ci-error-log
+              cp /tmp/ci_debug/error.txt ./ci_error.txt
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add ci_error.txt
+              git commit -m "ci: dump build error log" || true
+              git push -f origin ci-error-log || true
               exit 1
           fi
 
