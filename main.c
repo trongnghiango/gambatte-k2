@@ -2313,30 +2313,56 @@ EmulatorUI* emulator_ui_construct (GType object_type, GError** error) {
 								gchar* _tmp75_ = NULL;
 								gchar* _tmp76_ = NULL;
 								const gchar* _tmp77_ = NULL;
-								gchar* _tmp78_ = NULL;
-								gchar* _tmp79_ = NULL;
-								gchar* _tmp80_ = NULL;
+								gchar* cand1 = NULL;
+								gchar* cand2 = NULL;
+								gchar* cand3 = NULL;
+								gchar* cand4 = NULL;
+								gchar* cand5 = NULL;
+								gchar* cand6 = NULL;
+								gchar* parent_dir = NULL;
+								gchar* resolved = NULL;
+
 								_tmp74_ = emulator_ui_config_file;
 								_tmp75_ = g_path_get_dirname (_tmp74_);
 								_tmp76_ = _tmp75_;
 								_tmp77_ = core_path;
-								_tmp78_ = g_build_filename (_tmp76_, _tmp77_, NULL);
-								_tmp79_ = _tmp78_;
-								_tmp80_ = realpath (_tmp79_, NULL);
+
+								cand1 = g_build_filename (_tmp76_, _tmp77_, NULL);
+								cand2 = g_build_filename (_tmp76_, "cores", _tmp77_, NULL);
+								parent_dir = g_path_get_dirname (_tmp76_);
+								cand3 = g_build_filename (parent_dir, _tmp77_, NULL);
+								cand4 = g_build_filename (parent_dir, "cores", _tmp77_, NULL);
+								cand5 = g_build_filename ("/mnt/us/extensions/gambatte-k2", _tmp77_, NULL);
+								cand6 = g_build_filename ("/mnt/us/extensions/gambatte-k2/cores", _tmp77_, NULL);
+
+								if (g_file_test (cand1, G_FILE_TEST_EXISTS)) {
+									resolved = realpath (cand1, NULL);
+								} else if (g_file_test (cand2, G_FILE_TEST_EXISTS)) {
+									resolved = realpath (cand2, NULL);
+								} else if (g_file_test (cand3, G_FILE_TEST_EXISTS)) {
+									resolved = realpath (cand3, NULL);
+								} else if (g_file_test (cand4, G_FILE_TEST_EXISTS)) {
+									resolved = realpath (cand4, NULL);
+								} else if (g_file_test (cand5, G_FILE_TEST_EXISTS)) {
+									resolved = realpath (cand5, NULL);
+								} else if (g_file_test (cand6, G_FILE_TEST_EXISTS)) {
+									resolved = realpath (cand6, NULL);
+								}
+
 								_g_free0 (core_path);
-								core_path = _tmp80_;
-								_g_free0 (_tmp79_);
+								core_path = resolved ? resolved : cand1;
+								_g_free0 (cand2);
+								_g_free0 (cand3);
+								_g_free0 (cand4);
+								_g_free0 (cand5);
+								_g_free0 (cand6);
+								_g_free0 (parent_dir);
 								_g_free0 (_tmp76_);
 							}
 							_tmp81_ = core_path;
-							_tmp82_ = g_file_test (_tmp81_, G_FILE_TEST_EXISTS);
+							_tmp82_ = (_tmp81_ != NULL) && g_file_test (_tmp81_, G_FILE_TEST_EXISTS);
 							if (!_tmp82_) {
-								const gchar* _tmp83_ = NULL;
-								GError* _tmp84_ = NULL;
-								_tmp83_ = core_path;
-								_tmp84_ = g_error_new (EMULATOR_UI_ERROR, EMULATOR_UI_ERROR_ERROR, "core file %s doesn't exist", _tmp83_);
-								_inner_error_ = _tmp84_;
-								g_propagate_error (error, _inner_error_);
+								g_warning ("core file '%s' for extension '%s' doesn't exist, skipping", _tmp81_ ? _tmp81_ : "null", ext);
 								_g_free0 (core_path);
 								emulator_ui_core_settings_destroy (&_core);
 								_g_free0 (value);
@@ -2345,15 +2371,7 @@ EmulatorUI* emulator_ui_construct (GType object_type, GError** error) {
 								_g_free0 (ext);
 								k_parts = (_vala_array_free (k_parts, k_parts_length1, (GDestroyNotify) g_free), NULL);
 								_g_free0 (k);
-								k_collection = (_vala_array_free (k_collection, k_collection_length1, (GDestroyNotify) g_free), NULL);
-								_tmp33_ = (_vala_array_free (_tmp33_, _tmp33__length1, (GDestroyNotify) g_free), NULL);
-								_g_object_unref0 (drawing_area);
-								_g_object_unref0 (joypad_area);
-								_g_object_unref0 (main_vbox);
-								block2_data_unref (_data2_);
-								_data2_ = NULL;
-								_g_object_unref0 (self);
-								return NULL;
+								continue;
 							}
 							_tmp85_ = core_path;
 							_tmp86_ = g_strdup (_tmp85_);

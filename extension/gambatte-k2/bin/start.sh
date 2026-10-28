@@ -25,7 +25,7 @@ fi
 which eips >/dev/null 2>&1 && eips -c 2>/dev/null || true
 
 # Run gambatte-k2
-"$EXTDIR/bin/gambatte-k2" >> "$LOGFILE" 2>&1
+"$EXTDIR/bin/gambatte-k2" -c "$EXTDIR/config.ini" >> "$LOGFILE" 2>&1
 
 # Clean up: clear screen and restore screensaver when exiting
 which eips >/dev/null 2>&1 && eips -c 2>/dev/null || true
