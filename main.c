@@ -2859,7 +2859,11 @@ EmulatorUI* emulator_ui_construct (GType object_type, GError** error) {
 	g_signal_connect_object (self, "emulator-size", (GCallback) ___lambda47__emulator_ui_emulator_size, self, 0);
 	g_signal_connect_object ((GtkWidget*) self, "size-allocate", (GCallback) ___lambda48__gtk_widget_size_allocate, self, 0);
 	emulator_ui_load_style_rc_file (self);
+	gtk_window_set_title ((GtkWindow*) self, "L:A_N:application_ID:gambatte_PC:N");
+	gtk_window_fullscreen ((GtkWindow*) self);
+	gtk_window_set_decorated ((GtkWindow*) self, FALSE);
 	gtk_widget_show_all ((GtkWidget*) self);
+	g_message ("Gambatte-K2 UI initialized successfully. Window mapped.");
 	_g_object_unref0 (render_mode_toggle);
 	_g_object_unref0 (dark_mode_toggle);
 	_g_object_unref0 (max_fps_scale);

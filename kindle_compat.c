@@ -23,36 +23,19 @@ void gray_shm_destroy (void* shm);
 /* 1. Ink Widgets (InkScrolledWindow, InkRowHScale, InkRowToggleButton)       */
 /* ========================================================================= */
 
-/* 1a. InkScrolledWindow (Container wrapper that auto-wraps children into viewport+vbox) */
+/* 1a. InkScrolledWindow (Clean GtkVBox subclass for multi-child settings panel) */
 typedef struct _InkScrolledWindow {
-    GtkScrolledWindow parent_instance;
-    GtkWidget *vbox;
+    GtkVBox parent_instance;
 } InkScrolledWindow;
 
 typedef struct _InkScrolledWindowClass {
-    GtkScrolledWindowClass parent_class;
+    GtkVBoxClass parent_class;
 } InkScrolledWindowClass;
 
-static void ink_scrolled_window_add(GtkContainer *container, GtkWidget *widget) {
-    InkScrolledWindow *self = (InkScrolledWindow*)container;
-    if (!self->vbox) {
-        self->vbox = gtk_vbox_new(FALSE, 0);
-        gtk_scrolled_window_add_with_viewport(GTK_SCROLLED_WINDOW(self), self->vbox);
-        gtk_widget_show(self->vbox);
-    }
-    gtk_box_pack_start(GTK_BOX(self->vbox), widget, FALSE, FALSE, 0);
-}
+G_DEFINE_TYPE(InkScrolledWindow, ink_scrolled_window, GTK_TYPE_VBOX)
 
-G_DEFINE_TYPE(InkScrolledWindow, ink_scrolled_window, GTK_TYPE_SCROLLED_WINDOW)
-
-static void ink_scrolled_window_init(InkScrolledWindow *self) {
-    self->vbox = NULL;
-}
-
-static void ink_scrolled_window_class_init(InkScrolledWindowClass *klass) {
-    GtkContainerClass *container_class = GTK_CONTAINER_CLASS(klass);
-    container_class->add = ink_scrolled_window_add;
-}
+static void ink_scrolled_window_init(InkScrolledWindow *self) { (void)self; }
+static void ink_scrolled_window_class_init(InkScrolledWindowClass *klass) { (void)klass; }
 
 /* 1b. InkRowHScale */
 typedef struct _InkRowHScale {
