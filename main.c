@@ -756,6 +756,7 @@ static void ___lambda20__settings_bind_save_callback (gpointer self);
 static void __lambda21_ (EmulatorUI* self);
 static void ___lambda21__settings_bind_save_callback (gpointer self);
 void emulator_ui_set_render_mode (EmulatorUI* self, GameScreenCommitMode value);
+GType ink_scrolled_window_get_type (void) G_GNUC_CONST;
 GType ink_row_hscale_get_type (void) G_GNUC_CONST;
 void ink_row_hscale_set_lower (InkRowHScale* self, gdouble value);
 void ink_row_hscale_set_upper (InkRowHScale* self, gdouble value);
@@ -2036,6 +2037,9 @@ EmulatorUI* emulator_ui_construct (GType object_type, GError** error) {
 	emulator_ui_notify_group (self, _tmp4_, 2, ___lambda10__emulator_ui_notify_group_callback, self);
 	_tmp4_ = (_vala_array_free (_tmp4_, _tmp4__length1, (GDestroyNotify) g_free), NULL);
 	gtk_container_set_border_width ((GtkContainer*) self, (guint) 0);
+	ink_scrolled_window_get_type ();
+	ink_row_hscale_get_type ();
+	ink_row_toggle_button_get_type ();
 	_tmp5_ = gtk_builder_new ();
 	_data2_->builder = _tmp5_;
 	_tmp6_ = _data2_->builder;

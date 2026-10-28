@@ -62,5 +62,6 @@ executable(
   include_directories: [include_directories('.'), include_directories('include')],
   dependencies: deps,
   c_args: c_args,
+  export_dynamic: true,
   install: true
 )

@@ -20,21 +20,89 @@ uint8_t* gray_shm_get_buffer (void* shm);
 void gray_shm_destroy (void* shm);
 
 /* ========================================================================= */
-/* 1. InkRowHScale & InkRowToggleButton Widgets                              */
+/* 1. Ink Widgets (InkScrolledWindow, InkRowHScale, InkRowToggleButton)       */
 /* ========================================================================= */
 
+/* 1a. InkScrolledWindow */
+typedef struct _InkScrolledWindow {
+    GtkScrolledWindow parent_instance;
+} InkScrolledWindow;
+
+typedef struct _InkScrolledWindowClass {
+    GtkScrolledWindowClass parent_class;
+} InkScrolledWindowClass;
+
+G_DEFINE_TYPE(InkScrolledWindow, ink_scrolled_window, GTK_TYPE_SCROLLED_WINDOW)
+
+static void ink_scrolled_window_init(InkScrolledWindow *self) { (void)self; }
+static void ink_scrolled_window_class_init(InkScrolledWindowClass *klass) { (void)klass; }
+
+/* 1b. InkRowHScale */
 typedef struct _InkRowHScale {
     GtkHScale parent_instance;
+    gchar *label;
+    gchar *description;
 } InkRowHScale;
 
 typedef struct _InkRowHScaleClass {
     GtkHScaleClass parent_class;
 } InkRowHScaleClass;
 
+enum {
+    PROP_HSCALE_0,
+    PROP_HSCALE_LABEL,
+    PROP_HSCALE_DESC
+};
+
+static void ink_row_hscale_set_property(GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec) {
+    InkRowHScale *self = (InkRowHScale*)object;
+    switch (prop_id) {
+        case PROP_HSCALE_LABEL:
+            g_free(self->label);
+            self->label = g_value_dup_string(value);
+            break;
+        case PROP_HSCALE_DESC:
+            g_free(self->description);
+            self->description = g_value_dup_string(value);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+            break;
+    }
+}
+
+static void ink_row_hscale_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec) {
+    InkRowHScale *self = (InkRowHScale*)object;
+    switch (prop_id) {
+        case PROP_HSCALE_LABEL:
+            g_value_set_string(value, self->label);
+            break;
+        case PROP_HSCALE_DESC:
+            g_value_set_string(value, self->description);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+            break;
+    }
+}
+
 G_DEFINE_TYPE(InkRowHScale, ink_row_hscale, GTK_TYPE_HSCALE)
 
-static void ink_row_hscale_init(InkRowHScale *self) { (void)self; }
-static void ink_row_hscale_class_init(InkRowHScaleClass *klass) { (void)klass; }
+static void ink_row_hscale_init(InkRowHScale *self) {
+    self->label = NULL;
+    self->description = NULL;
+}
+
+static void ink_row_hscale_class_init(InkRowHScaleClass *klass) {
+    GObjectClass *oclass = G_OBJECT_CLASS(klass);
+    oclass->set_property = ink_row_hscale_set_property;
+    oclass->get_property = ink_row_hscale_get_property;
+
+    g_object_class_install_property(oclass, PROP_HSCALE_LABEL,
+        g_param_spec_string("label", "Label", "Label", NULL, G_PARAM_READWRITE));
+    g_object_class_install_property(oclass, PROP_HSCALE_DESC,
+        g_param_spec_string("description", "Description", "Description", NULL, G_PARAM_READWRITE));
+}
 
 void ink_row_hscale_set_lower(InkRowHScale* self, gdouble value) {
     if (self) {
@@ -54,18 +122,60 @@ void ink_row_hscale_set_upper(InkRowHScale* self, gdouble value) {
     }
 }
 
+/* 1c. InkRowToggleButton */
 typedef struct _InkRowToggleButton {
     GtkToggleButton parent_instance;
+    gchar *description;
 } InkRowToggleButton;
 
 typedef struct _InkRowToggleButtonClass {
     GtkToggleButtonClass parent_class;
 } InkRowToggleButtonClass;
 
+enum {
+    PROP_BTN_0,
+    PROP_BTN_DESC
+};
+
+static void ink_row_toggle_button_set_property(GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec) {
+    InkRowToggleButton *self = (InkRowToggleButton*)object;
+    switch (prop_id) {
+        case PROP_BTN_DESC:
+            g_free(self->description);
+            self->description = g_value_dup_string(value);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+            break;
+    }
+}
+
+static void ink_row_toggle_button_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec) {
+    InkRowToggleButton *self = (InkRowToggleButton*)object;
+    switch (prop_id) {
+        case PROP_BTN_DESC:
+            g_value_set_string(value, self->description);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+            break;
+    }
+}
+
 G_DEFINE_TYPE(InkRowToggleButton, ink_row_toggle_button, GTK_TYPE_TOGGLE_BUTTON)
 
-static void ink_row_toggle_button_init(InkRowToggleButton *self) { (void)self; }
-static void ink_row_toggle_button_class_init(InkRowToggleButtonClass *klass) { (void)klass; }
+static void ink_row_toggle_button_init(InkRowToggleButton *self) {
+    self->description = NULL;
+}
+
+static void ink_row_toggle_button_class_init(InkRowToggleButtonClass *klass) {
+    GObjectClass *oclass = G_OBJECT_CLASS(klass);
+    oclass->set_property = ink_row_toggle_button_set_property;
+    oclass->get_property = ink_row_toggle_button_get_property;
+
+    g_object_class_install_property(oclass, PROP_BTN_DESC,
+        g_param_spec_string("description", "Description", "Description", NULL, G_PARAM_READWRITE));
+}
 
 /* ========================================================================= */
 /* 2. Lipstick (Kindle lipc wrapper)                                         */
