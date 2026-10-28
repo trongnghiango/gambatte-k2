@@ -48,7 +48,9 @@ sources = files(
 c_args = [
   '-Wno-deprecated-declarations',
   '-Wno-unused-variable',
-  '-Wno-unused-function'
+  '-Wno-unused-function',
+  '-Wno-incompatible-pointer-types',
+  '-Wno-int-conversion'
 ]
 
 executable(

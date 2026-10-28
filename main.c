@@ -2118,7 +2118,7 @@ EmulatorUI* emulator_ui_construct (GType object_type, GError** error) {
 		_g_object_unref0 (self);
 		return NULL;
 	}
-	_tmp32_ = gee_hash_map_new (G_TYPE_STRING, (GBoxedCopyFunc) g_strdup, g_free, EMULATOR_UI_TYPE_CORE_SETTINGS, (GBoxedCopyFunc) emulator_ui_core_settings_dup, emulator_ui_core_settings_free, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+	_tmp32_ = gee_hash_map_new (G_TYPE_STRING, (GBoxedCopyFunc) g_strdup, g_free, EMULATOR_UI_TYPE_CORE_SETTINGS, (GBoxedCopyFunc) emulator_ui_core_settings_dup, (GDestroyNotify) emulator_ui_core_settings_free, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 	_g_object_unref0 (self->priv->cores_map);
 	self->priv->cores_map = _tmp32_;
 	_tmp34_ = self->priv->kf;
@@ -2785,7 +2785,7 @@ EmulatorUI* emulator_ui_construct (GType object_type, GError** error) {
 	_tmp193_ = _g_object_ref0 (G_TYPE_CHECK_INSTANCE_TYPE (_tmp192_, TYPE_INK_ROW_TOGGLE_BUTTON) ? ((InkRowToggleButton*) _tmp192_) : NULL);
 	render_mode_toggle = _tmp193_;
 	_tmp194_ = render_mode_toggle;
-	g_object_bind_property_with_closures ((GObject*) self, "render-mode", (GObject*) _tmp194_, "active", G_BINDING_BIDIRECTIONAL | G_BINDING_SYNC_CREATE, (GClosure*) ((___lambda27__gbinding_transform_func == NULL) ? NULL : g_cclosure_new ((GCallback) ___lambda27__gbinding_transform_func, g_object_ref (self), g_object_unref)), (GClosure*) ((___lambda28__gbinding_transform_func == NULL) ? NULL : g_cclosure_new ((GCallback) ___lambda28__gbinding_transform_func, g_object_ref (self), g_object_unref)));
+	g_object_bind_property_with_closures ((GObject*) self, "render-mode", (GObject*) _tmp194_, "active", G_BINDING_BIDIRECTIONAL | G_BINDING_SYNC_CREATE, (GClosure*) ((___lambda27__gbinding_transform_func == NULL) ? NULL : g_cclosure_new ((GCallback) ___lambda27__gbinding_transform_func, g_object_ref (self), (GClosureNotify) g_object_unref)), (GClosure*) ((___lambda28__gbinding_transform_func == NULL) ? NULL : g_cclosure_new ((GCallback) ___lambda28__gbinding_transform_func, g_object_ref (self), (GClosureNotify) g_object_unref)));
 	_tmp195_ = self->priv->gamescreen;
 	g_object_bind_property_with_closures ((GObject*) self, "render-mode", (GObject*) _tmp195_, "mode", G_BINDING_DEFAULT | G_BINDING_SYNC_CREATE, (GClosure*) ((NULL == NULL) ? NULL : g_cclosure_new ((GCallback) NULL, NULL, NULL)), (GClosure*) ((NULL == NULL) ? NULL : g_cclosure_new ((GCallback) NULL, NULL, NULL)));
 	g_signal_connect_object ((GObject*) self, "notify::render-mode", (GCallback) ___lambda29__g_object_notify, self, 0);
@@ -3194,7 +3194,7 @@ static void emulator_ui_load_memory (EmulatorUI* self) {
 				gint _tmp44__length1 = 0;
 				gsize _tmp45_ = 0UL;
 				_tmp37_ = ram_file;
-				g_file_load_contents (_tmp37_, NULL, &_tmp38_, &_tmp39_, NULL, &_inner_error_);
+				g_file_load_contents (_tmp37_, NULL, (gchar**) &_tmp38_, &_tmp39_, NULL, &_inner_error_);
 				ram_content = (g_free (ram_content), NULL);
 				ram_content = _tmp38_;
 				ram_content_length1 = _tmp39_;
@@ -3257,7 +3257,7 @@ static void emulator_ui_load_memory (EmulatorUI* self) {
 						gint _tmp60__length1 = 0;
 						gsize _tmp61_ = 0UL;
 						_tmp53_ = rtc_file;
-						g_file_load_contents (_tmp53_, NULL, &_tmp54_, &_tmp55_, NULL, &_inner_error_);
+						g_file_load_contents (_tmp53_, NULL, (gchar**) &_tmp54_, &_tmp55_, NULL, &_inner_error_);
 						rtc_content = (g_free (rtc_content), NULL);
 						rtc_content = _tmp54_;
 						rtc_content_length1 = _tmp55_;
@@ -3322,7 +3322,7 @@ static void emulator_ui_load_memory (EmulatorUI* self) {
 					gint _tmp73__length1 = 0;
 					gsize _tmp74_ = 0UL;
 					_tmp69_ = state_file;
-					g_file_load_contents (_tmp69_, NULL, &_tmp70_, &_tmp71_, NULL, &_inner_error_);
+					g_file_load_contents (_tmp69_, NULL, (gchar**) &_tmp70_, &_tmp71_, NULL, &_inner_error_);
 					state_content = (g_free (state_content), NULL);
 					state_content = _tmp70_;
 					state_content_length1 = _tmp71_;
@@ -3652,7 +3652,7 @@ static void emulator_ui_load_style_rc_file (EmulatorUI* self) {
 	_tmp6_ = contents;
 	_tmp7_ = strlen (_tmp6_);
 	_tmp8_ = _tmp7_;
-	_tmp9_ = g_regex_replace_eval (_tmp4_, (const gchar*) _tmp5_, (gssize) _tmp8_, 0, 0, ___lambda49__gregex_eval_callback, _data3_, &_inner_error_);
+	_tmp9_ = g_regex_replace_eval (_tmp4_, (const gchar*) _tmp5_, (gssize) _tmp8_, 0, 0, (GRegexEvalCallback) ___lambda49__gregex_eval_callback, _data3_, &_inner_error_);
 	style_rc_file_content = _tmp9_;
 	if (G_UNLIKELY (_inner_error_ != NULL)) {
 		_g_regex_unref0 (regex);

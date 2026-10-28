@@ -864,7 +864,7 @@ static void retro_core_load_game (RetroCore* self, const gchar* game_rom_path, R
 		_tmp1_ = g_file_new_for_path (_tmp0_);
 		file = _tmp1_;
 		_tmp2_ = file;
-		g_file_load_contents (_tmp2_, NULL, &_tmp3_, &_tmp4_, NULL, &_inner_error_);
+		g_file_load_contents (_tmp2_, NULL, (gchar**) &_tmp3_, &_tmp4_, NULL, &_inner_error_);
 		contents = (g_free (contents), NULL);
 		contents = _tmp3_;
 		contents_length1 = _tmp4_;
