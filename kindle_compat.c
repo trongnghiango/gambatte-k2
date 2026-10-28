@@ -451,7 +451,7 @@ void gee_abstract_map_set (GeeAbstractMap* self, gconstpointer key, gconstpointe
 gboolean gee_abstract_map_has_key (GeeAbstractMap* self, gconstpointer key) {
     GeeHashMapWrapper *w = (GeeHashMapWrapper*)self;
     if (!w || !w->table || !key) return FALSE;
-    return g_hash_table_contains(w->table, key);
+    return g_hash_table_lookup_extended(w->table, key, NULL, NULL);
 }
 
 /* GeeArrayList wrapper */
