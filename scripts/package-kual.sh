@@ -22,26 +22,42 @@ if [ -f "$ROOT_DIR/config.ini" ]; then
     cp "$ROOT_DIR/config.ini" "$DIST_DIR/"
 fi
 
-# 3. Sao chép binary thực thi
+# 3. Sao chép binary thực thi (cả bin/ và thư mục gốc để tương thích 100%)
 BIN_SRC="${1:-}"
+ACTUAL_BIN=""
 if [ -n "$BIN_SRC" ] && [ -f "$BIN_SRC" ]; then
-    cp "$BIN_SRC" "$DIST_DIR/bin/gambatte-k2"
-    chmod +x "$DIST_DIR/bin/gambatte-k2"
-    echo "  ✓ Đã nạp binary: $BIN_SRC"
+    ACTUAL_BIN="$BIN_SRC"
 elif [ -f "$ROOT_DIR/builddir_kindlehf/gambatte-k2" ]; then
-    cp "$ROOT_DIR/builddir_kindlehf/gambatte-k2" "$DIST_DIR/bin/gambatte-k2"
-    chmod +x "$DIST_DIR/bin/gambatte-k2"
-    echo "  ✓ Đã nạp binary: $ROOT_DIR/builddir_kindlehf/gambatte-k2"
+    ACTUAL_BIN="$ROOT_DIR/builddir_kindlehf/gambatte-k2"
 elif [ -f "$ROOT_DIR/bin/gambatte-k2" ]; then
-    cp "$ROOT_DIR/bin/gambatte-k2" "$DIST_DIR/bin/gambatte-k2"
-    chmod +x "$DIST_DIR/bin/gambatte-k2"
-    echo "  ✓ Đã nạp binary: $ROOT_DIR/bin/gambatte-k2"
+    ACTUAL_BIN="$ROOT_DIR/bin/gambatte-k2"
 fi
 
-# 4. Sao chép libretro cores
+if [ -n "$ACTUAL_BIN" ]; then
+    cp "$ACTUAL_BIN" "$DIST_DIR/bin/gambatte-k2"
+    cp -f "$ACTUAL_BIN" "$DIST_DIR/gambatte-k2"
+    cp -f "$ACTUAL_BIN" "$DIST_DIR/gambatte-k2-armhf"
+    cp -f "$ACTUAL_BIN" "$DIST_DIR/gambatte-k2-armel"
+    chmod +x "$DIST_DIR/bin/gambatte-k2" "$DIST_DIR/gambatte-k2" "$DIST_DIR/gambatte-k2-armhf" "$DIST_DIR/gambatte-k2-armel"
+    echo "  ✓ Đã nạp binary: $ACTUAL_BIN"
+fi
+
+# 4. Sao chép libretro cores (cả cores/, thư mục gốc và bin/)
 if [ -d "$ROOT_DIR/cores" ]; then
     cp -r "$ROOT_DIR/cores/." "$DIST_DIR/cores/" 2>/dev/null || true
-    echo "  ✓ Đã nạp libretro cores"
+    if [ -f "$DIST_DIR/cores/gambatte_libretro.so" ] && [ ! -f "$DIST_DIR/cores/gambatte_libretro-armel.so" ]; then
+        cp -f "$DIST_DIR/cores/gambatte_libretro.so" "$DIST_DIR/cores/gambatte_libretro-armel.so"
+    fi
+    if [ -f "$DIST_DIR/cores/gambatte_libretro.so" ] && [ ! -f "$DIST_DIR/cores/gambatte_libretro-armhf.so" ]; then
+        cp -f "$DIST_DIR/cores/gambatte_libretro.so" "$DIST_DIR/cores/gambatte_libretro-armhf.so"
+    fi
+    cp -f "$DIST_DIR/cores/"* "$DIST_DIR/" 2>/dev/null || true
+    cp -f "$DIST_DIR/cores/"* "$DIST_DIR/bin/" 2>/dev/null || true
+    echo "  ✓ Đã nạp libretro cores đa đường dẫn (cores, root, bin)"
+fi
+
+if [ -f "$DIST_DIR/config.ini" ]; then
+    cp -f "$DIST_DIR/config.ini" "$DIST_DIR/bin/config.ini" 2>/dev/null || true
 fi
 
 # 5. Đóng gói ZIP bằng python3 zipfile

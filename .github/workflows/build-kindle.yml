@@ -114,6 +114,7 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/cores"
           cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armhf.so"
+          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armel.so"
           cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro.so"
 
           echo "Compiled Gambatte core info:"

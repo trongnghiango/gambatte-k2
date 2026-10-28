@@ -1222,6 +1222,68 @@ static gchar* string_replace (const gchar* self, const gchar* old, const gchar* 
 }
 
 
+static gchar* find_existing_core_path(const gchar* base_dir, const gchar* core_filename) {
+    if (!core_filename) return NULL;
+    if (g_path_is_absolute(core_filename)) {
+        if (g_file_test(core_filename, G_FILE_TEST_EXISTS)) {
+            return realpath(core_filename, NULL);
+        }
+        return g_strdup(core_filename);
+    }
+
+    const gchar* dirs[8];
+    int ndirs = 0;
+    gchar* parent1 = base_dir ? g_path_get_dirname(base_dir) : NULL;
+    gchar* cores_sub = base_dir ? g_build_filename(base_dir, "cores", NULL) : NULL;
+    gchar* bin_sub = base_dir ? g_build_filename(base_dir, "bin", NULL) : NULL;
+    gchar* p_cores = parent1 ? g_build_filename(parent1, "cores", NULL) : NULL;
+
+    if (base_dir) dirs[ndirs++] = base_dir;
+    if (cores_sub) dirs[ndirs++] = cores_sub;
+    if (bin_sub) dirs[ndirs++] = bin_sub;
+    if (parent1) dirs[ndirs++] = parent1;
+    if (p_cores) dirs[ndirs++] = p_cores;
+    dirs[ndirs++] = "/mnt/us/extensions/gambatte-k2/cores";
+    dirs[ndirs++] = "/mnt/us/extensions/gambatte-k2";
+    dirs[ndirs++] = "/mnt/us/extensions/gambatte-k2/bin";
+
+    /* Core filename variations (armel, armhf, plain) */
+    gchar* names[5];
+    int nnames = 0;
+    names[nnames++] = g_strdup(core_filename);
+    if (strstr(core_filename, "armel")) {
+        names[nnames++] = string_replace(core_filename, "armel", "armhf");
+        names[nnames++] = string_replace(core_filename, "-armel", "");
+    } else if (strstr(core_filename, "armhf")) {
+        names[nnames++] = string_replace(core_filename, "armhf", "armel");
+        names[nnames++] = string_replace(core_filename, "-armhf", "");
+    } else {
+        names[nnames++] = g_strdup("gambatte_libretro-armel.so");
+        names[nnames++] = g_strdup("gambatte_libretro-armhf.so");
+    }
+
+    gchar* found = NULL;
+    for (int d = 0; d < ndirs && !found; d++) {
+        for (int n = 0; n < nnames && !found; n++) {
+            gchar* candidate = g_build_filename(dirs[d], names[n], NULL);
+            if (g_file_test(candidate, G_FILE_TEST_EXISTS)) {
+                found = realpath(candidate, NULL);
+                if (!found) found = g_strdup(candidate);
+            }
+            g_free(candidate);
+        }
+    }
+
+    for (int n = 0; n < nnames; n++) g_free(names[n]);
+    g_free(parent1);
+    g_free(cores_sub);
+    g_free(bin_sub);
+    g_free(p_cores);
+
+    return found;
+}
+
+
 static gboolean bool_parse (const gchar* str) {
 	gboolean result = FALSE;
 	const gchar* _tmp0_ = NULL;
@@ -2305,66 +2367,22 @@ EmulatorUI* emulator_ui_construct (GType object_type, GError** error) {
 							}
 							_tmp70_ = value;
 							_tmp71_ = string_replace (_tmp70_, "<arch>", _tmp68_);
-							core_path = _tmp71_;
-							_tmp72_ = core_path;
-							_tmp73_ = g_path_is_absolute (_tmp72_);
-							if (!_tmp73_) {
-								const gchar* _tmp74_ = NULL;
-								gchar* _tmp75_ = NULL;
-								gchar* _tmp76_ = NULL;
-								const gchar* _tmp77_ = NULL;
-								gchar* cand1 = NULL;
-								gchar* cand2 = NULL;
-								gchar* cand3 = NULL;
-								gchar* cand4 = NULL;
-								gchar* cand5 = NULL;
-								gchar* cand6 = NULL;
-								gchar* parent_dir = NULL;
-								gchar* resolved = NULL;
 
-								_tmp74_ = emulator_ui_config_file;
-								_tmp75_ = g_path_get_dirname (_tmp74_);
-								_tmp76_ = _tmp75_;
-								_tmp77_ = core_path;
+							const gchar* _tmp74_ = emulator_ui_config_file;
+							gchar* _tmp75_ = g_path_get_dirname (_tmp74_);
+							gchar* resolved_core = find_existing_core_path (_tmp75_, _tmp71_);
+							_g_free0 (_tmp71_);
+							_g_free0 (_tmp75_);
 
-								cand1 = g_build_filename (_tmp76_, _tmp77_, NULL);
-								cand2 = g_build_filename (_tmp76_, "cores", _tmp77_, NULL);
-								parent_dir = g_path_get_dirname (_tmp76_);
-								cand3 = g_build_filename (parent_dir, _tmp77_, NULL);
-								cand4 = g_build_filename (parent_dir, "cores", _tmp77_, NULL);
-								cand5 = g_build_filename ("/mnt/us/extensions/gambatte-k2", _tmp77_, NULL);
-								cand6 = g_build_filename ("/mnt/us/extensions/gambatte-k2/cores", _tmp77_, NULL);
-
-								if (g_file_test (cand1, G_FILE_TEST_EXISTS)) {
-									resolved = realpath (cand1, NULL);
-								} else if (g_file_test (cand2, G_FILE_TEST_EXISTS)) {
-									resolved = realpath (cand2, NULL);
-								} else if (g_file_test (cand3, G_FILE_TEST_EXISTS)) {
-									resolved = realpath (cand3, NULL);
-								} else if (g_file_test (cand4, G_FILE_TEST_EXISTS)) {
-									resolved = realpath (cand4, NULL);
-								} else if (g_file_test (cand5, G_FILE_TEST_EXISTS)) {
-									resolved = realpath (cand5, NULL);
-								} else if (g_file_test (cand6, G_FILE_TEST_EXISTS)) {
-									resolved = realpath (cand6, NULL);
-								}
-
-								_g_free0 (core_path);
-								core_path = resolved ? resolved : cand1;
-								_g_free0 (cand2);
-								_g_free0 (cand3);
-								_g_free0 (cand4);
-								_g_free0 (cand5);
-								_g_free0 (cand6);
-								_g_free0 (parent_dir);
-								_g_free0 (_tmp76_);
-							}
+							core_path = resolved_core;
 							_tmp81_ = core_path;
 							_tmp82_ = (_tmp81_ != NULL) && g_file_test (_tmp81_, G_FILE_TEST_EXISTS);
 							if (!_tmp82_) {
 								g_warning ("core file '%s' for extension '%s' doesn't exist, skipping", _tmp81_ ? _tmp81_ : "null", ext);
 								_g_free0 (core_path);
+								core_path = NULL;
 								emulator_ui_core_settings_destroy (&_core);
+								memset (&_core, 0, sizeof (EmulatorUICoreSettings));
 								_g_free0 (value);
 								_g_free0 (prop2);
 								_g_free0 (prop1);
