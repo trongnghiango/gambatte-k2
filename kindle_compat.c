@@ -600,3 +600,91 @@ GeeCollection* gee_abstract_map_get_keys (GeeMap* self) {
     }
     return (GeeCollection*)keys_list;
 }
+
+/* ========================================================================= */
+/* 5. settings_bind_bind Implementation                                      */
+/* ========================================================================= */
+
+typedef void (*SettingsBindSaveCallback) (void* user_data);
+
+typedef struct {
+    GKeyFile *kf;
+    gchar *section;
+    gchar *key;
+    GType t_type;
+    SettingsBindSaveCallback save_cb;
+    gpointer save_cb_target;
+} SettingsBindData;
+
+static void on_settings_property_changed(GObject *obj, GParamSpec *pspec, gpointer user_data) {
+    SettingsBindData *data = (SettingsBindData*)user_data;
+    if (!data || !data->kf || !data->section || !data->key) return;
+
+    if (data->t_type == G_TYPE_STRING) {
+        gchar *val = NULL;
+        g_object_get(obj, pspec->name, &val, NULL);
+        if (val) {
+            g_key_file_set_string(data->kf, data->section, data->key, val);
+            g_free(val);
+        }
+    } else if (data->t_type == G_TYPE_INT) {
+        gint val = 0;
+        g_object_get(obj, pspec->name, &val, NULL);
+        g_key_file_set_integer(data->kf, data->section, data->key, val);
+    } else if (data->t_type == G_TYPE_BOOLEAN) {
+        gboolean val = FALSE;
+        g_object_get(obj, pspec->name, &val, NULL);
+        g_key_file_set_boolean(data->kf, data->section, data->key, val);
+    }
+
+    if (data->save_cb) {
+        data->save_cb(data->save_cb_target);
+    }
+}
+
+void settings_bind_bind (GType t_type, GBoxedCopyFunc t_dup_func, GDestroyNotify t_destroy_func,
+                         GKeyFile* kf, const gchar* section, const gchar* key,
+                         GObject* obj, const gchar* prop,
+                         SettingsBindSaveCallback save_cb, void* save_cb_target) {
+    (void)t_dup_func; (void)t_destroy_func;
+    if (!kf || !section || !key || !obj || !prop) return;
+
+    /* 1. Load initial value from GKeyFile into GObject property */
+    if (t_type == G_TYPE_STRING) {
+        gchar *val = g_key_file_get_string(kf, section, key, NULL);
+        if (val) {
+            g_object_set(obj, prop, val, NULL);
+            g_free(val);
+        }
+    } else if (t_type == G_TYPE_INT) {
+        GError *err = NULL;
+        gint val = g_key_file_get_integer(kf, section, key, &err);
+        if (!err) {
+            g_object_set(obj, prop, val, NULL);
+        } else {
+            g_clear_error(&err);
+        }
+    } else if (t_type == G_TYPE_BOOLEAN) {
+        GError *err = NULL;
+        gboolean val = g_key_file_get_boolean(kf, section, key, &err);
+        if (!err) {
+            g_object_set(obj, prop, val, NULL);
+        } else {
+            g_clear_error(&err);
+        }
+    }
+
+    /* 2. Bind change notification so saving happens when settings change */
+    SettingsBindData *data = g_new0(SettingsBindData, 1);
+    data->kf = kf;
+    data->section = g_strdup(section);
+    data->key = g_strdup(key);
+    data->t_type = t_type;
+    data->save_cb = save_cb;
+    data->save_cb_target = save_cb_target;
+
+    gchar *signal_name = g_strdup_printf("notify::%s", prop);
+    g_signal_connect(obj, signal_name, G_CALLBACK(on_settings_property_changed), data);
+    g_free(signal_name);
+}
+
