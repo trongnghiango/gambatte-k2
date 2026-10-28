@@ -1,0 +1,7 @@
+*.o
+*.so
+bin/
+dist/
+*.zip
+*.log
+.DS_Store

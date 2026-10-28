@@ -1,0 +1,9 @@
+{
+  "items": [
+    {
+      "name": "Gambatte-K2",
+      "priority": 1,
+      "action": "bin/start.sh"
+    }
+  ]
+}

@@ -916,6 +916,8 @@ static void retro_core_load_game (RetroCore* self, const gchar* game_rom_path, R
 	_tmp14_ = contents;
 	_tmp14__length1 = contents_length1;
 	(*game).size = (gsize) _tmp14__length1;
+	(*game).path = (g_free ((*game).path), NULL);
+	(*game).path = g_strdup (game_rom_path);
 	_g_free0 (checksum);
 	contents = (g_free (contents), NULL);
 }

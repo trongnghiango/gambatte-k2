@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension>
+  <information>
+    <name>Gambatte-K2</name>
+    <version>1.2-optimized</version>
+    <author>crazy-electron / optimized for PW2/PW3</author>
+    <id>org.kual.gambatte-k2</id>
+  </information>
+  <menus>
+    <menu type="json" dynamic="true">menu.json</menu>
+  </menus>
+</extension>

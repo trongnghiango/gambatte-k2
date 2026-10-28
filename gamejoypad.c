@@ -898,14 +898,9 @@ void* game_joypad_thread_fn (void) {
 	GameJoypadTouchSlot _tmp10_[2] = {0};
 	gint current_slot = 0;
 	GError * _inner_error_ = NULL;
+	/* Do not elevate to real-time SCHED_RR priority 70 to avoid starvation on single-core CPU */
 	memset (&_tmp0_, 0, sizeof (struct sched_param));
-	_tmp0_.sched_priority = 70;
 	param = _tmp0_;
-	_tmp1_ = pthread_self ();
-	_tmp2_ = pthread_setschedparam (_tmp1_, (gint) SCHED_RR, &param);
-	if (_tmp2_ != 0) {
-		g_warning ("gamejoypad.vala:319: [gamejoypad] pthread_setschedparam failed\n");
-	}
 	_tmp3_ = game_joypad_self;
 	_tmp4_ = _tmp3_->priv->touch_device;
 	_tmp5_ = open (_tmp4_, O_RDONLY | O_NONBLOCK, (mode_t) 0);
@@ -1011,45 +1006,17 @@ void* game_joypad_thread_fn (void) {
 				_tmp29_ = ev;
 				_tmp30_ = _tmp29_.code;
 				if (_tmp30_ == ABS_MT_SLOT) {
-					struct input_event _tmp31_ = {0};
-					gint32 _tmp32_ = 0;
-					_tmp31_ = ev;
-					_tmp32_ = _tmp31_.value;
-					current_slot = (gint) _tmp32_;
+					current_slot = (gint) ev.value;
 					continue;
 				}
-				_tmp34_ = ev;
-				_tmp35_ = _tmp34_.code;
-				if (_tmp35_ == ABS_MT_TRACKING_ID) {
-					struct input_event _tmp36_ = {0};
-					gint32 _tmp37_ = 0;
-					_tmp36_ = ev;
-					_tmp37_ = _tmp36_.value;
-					_tmp33_ = _tmp37_ != ((gint32) -1);
-				} else {
-					_tmp33_ = FALSE;
-				}
-				if (_tmp33_) {
-					struct input_event _tmp38_ = {0};
-					gint32 _tmp39_ = 0;
-					_tmp38_ = ev;
-					_tmp39_ = _tmp38_.value;
-					current_slot = (gint) _tmp39_;
-				}
-				_tmp40_ = current_slot;
-				if (_tmp40_ > 1) {
+				if (ev.code == ABS_MT_TRACKING_ID) {
+					/* Tracking ID is NOT slot index! Only update active flag for current_slot */
+					if (current_slot >= 0 && current_slot < 2) {
+						slots[current_slot].active = (ev.value != -1);
+					}
 					continue;
 				}
-				_tmp41_ = ev;
-				_tmp42_ = _tmp41_.code;
-				if (_tmp42_ == ABS_MT_TRACKING_ID) {
-					gint _tmp43_ = 0;
-					struct input_event _tmp44_ = {0};
-					gint32 _tmp45_ = 0;
-					_tmp43_ = current_slot;
-					_tmp44_ = ev;
-					_tmp45_ = _tmp44_.value;
-					slots[_tmp43_].active = _tmp45_ != ((gint32) -1);
+				if (current_slot < 0 || current_slot > 1) {
 					continue;
 				}
 				_tmp46_ = ev;

@@ -4095,15 +4095,8 @@ void* emulator_ui_core_thread_fn (void) {
 	gint64 _frame_interval_us = 0LL;
 	GError * _inner_error_ = NULL;
 	g_debug ("main.vala:892: [main.core_thread_fn] ENTER\n");
+	/* Do not elevate to real-time SCHED_RR priority 70 to avoid starvation on single-core CPU */
 	param = _tmp0_;
-	param.sched_priority = 70;
-	_tmp1_ = pthread_self ();
-	_tmp2_ = pthread_setschedparam (_tmp1_, (gint) SCHED_RR, &param);
-	if (_tmp2_ != 0) {
-		FILE* _tmp3_ = NULL;
-		_tmp3_ = stderr;
-		fprintf (_tmp3_, "pthread_setschedparam failed\n");
-	}
 	_tmp4_ = g_get_monotonic_time ();
 	t1 = _tmp4_;
 	t2 = (gint64) 0;
@@ -4150,9 +4143,8 @@ void* emulator_ui_core_thread_fn (void) {
 			_tmp17_ = elapsed;
 			g_usleep ((gulong) (_tmp16_ - _tmp17_));
 		} else {
-			gint64 _tmp18_ = 0LL;
-			_tmp18_ = elapsed;
-			g_debug ("main.vala:913: [core_thread_fn] warning negative drift, elapsed: %f\n", ((gdouble) _tmp18_) / 1000.0);
+			/* Always sleep at least 1ms to allow GTK/X11/touch to process on single-core CPU */
+			g_usleep (1000);
 		}
 		_tmp19_ = g_get_monotonic_time ();
 		t1 = _tmp19_;
@@ -4164,10 +4156,7 @@ void* emulator_ui_core_thread_fn (void) {
 		_tmp24_ = elapsed;
 		_tmp25_ = llabs (_tmp24_);
 		_tmp26_ = _frame_interval_us;
-		if (_tmp25_ > (_tmp26_ * 2)) {
-			gint64 _tmp27_ = 0LL;
-			_tmp27_ = elapsed;
-			g_debug ("main.vala:921: [core_thread_fn] warning ignored drift correction: %f\n", ((gdouble) _tmp27_) / 1000.0);
+		if (_tmp25_ > (_tmp26_ * 2) || elapsed > _tmp26_) {
 			elapsed = (gint64) 0;
 		}
 		{
@@ -4276,7 +4265,7 @@ void* emulator_ui_core_thread_fn (void) {
 						gint64 _tmp59_ = 0LL;
 						_tmp58_ = t1;
 						_tmp59_ = autosave_time;
-						if (((_tmp58_ - _tmp59_) / 1000.0) > ((gdouble) 30000)) {
+						if (((_tmp58_ - _tmp59_) / 1000.0) > ((gdouble) 300000)) {
 							EmulatorUI* _tmp60_ = NULL;
 							gint64 _tmp61_ = 0LL;
 							g_debug ("main.vala:942: auto saving...");
@@ -4310,46 +4299,45 @@ void* emulator_ui_core_thread_fn (void) {
 
 
 void emulator_ui_video_refresh_cb (void* data, guint width, guint height, gsize pitch) {
-	void* _tmp0_ = NULL;
-	EmulatorUI* _tmp1_ = NULL;
-	GameScreen* _tmp2_ = NULL;
-	void* _tmp3_ = NULL;
-	guint _tmp4_ = 0U;
-	guint _tmp5_ = 0U;
-	gsize _tmp6_ = 0UL;
-	_tmp0_ = data;
-	if (_tmp0_ == NULL) {
+	static gint64 last_render_us = 0;
+	gint64 now_us;
+	gint target_fps = 20;
+	gint64 min_interval_us;
+	EmulatorUI* ui = emulator_ui_self;
+
+	if (data == NULL) {
 		return;
 	}
-	_tmp1_ = emulator_ui_self;
-	_tmp2_ = _tmp1_->priv->gamescreen;
-	_tmp3_ = data;
-	_tmp4_ = width;
-	_tmp5_ = height;
-	_tmp6_ = pitch;
-	game_screen_push_frame (_tmp2_, _tmp3_, _tmp4_, _tmp5_, _tmp6_);
+
+	if (ui != NULL) {
+		target_fps = ui->priv->_max_fps;
+		if (target_fps <= 0) {
+			target_fps = 20;
+		}
+	}
+	min_interval_us = (gint64) (1000000 / target_fps);
+	now_us = g_get_monotonic_time ();
+
+	/* Frame skipping: only push frame to E-Ink display if enough time elapsed */
+	if (last_render_us > 0 && (now_us - last_render_us) < min_interval_us) {
+		return;
+	}
+	last_render_us = now_us;
+
+	if (ui != NULL && ui->priv->gamescreen != NULL) {
+		game_screen_push_frame (ui->priv->gamescreen, data, width, height, pitch);
+	}
 }
 
 
 gsize emulator_ui_audio_sample_batch_cb (void* data, gsize frames) {
-	gsize result = 0UL;
-	void* _tmp0_ = NULL;
-	gsize _tmp5_ = 0UL;
-	_tmp0_ = data;
-	if (_tmp0_ != NULL) {
-		EmulatorUI* _tmp1_ = NULL;
-		GameSpeaker* _tmp2_ = NULL;
-		void* _tmp3_ = NULL;
-		gsize _tmp4_ = 0UL;
-		_tmp1_ = emulator_ui_self;
-		_tmp2_ = _tmp1_->priv->gamespeaker;
-		_tmp3_ = data;
-		_tmp4_ = frames;
-		game_speaker_push_frame (_tmp2_, _tmp3_, _tmp4_);
+	if (data != NULL && emulator_ui_self != NULL) {
+		if (!emulator_ui_self->priv->_audio || emulator_ui_self->priv->gamespeaker == NULL) {
+			return frames;
+		}
+		game_speaker_push_frame (emulator_ui_self->priv->gamespeaker, data, frames);
 	}
-	_tmp5_ = frames;
-	result = _tmp5_;
-	return result;
+	return frames;
 }
 
 

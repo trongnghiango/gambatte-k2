@@ -1,0 +1,183 @@
+name: Build Gambatte-K2 for Kindle PW2/PW3
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  TARGET: kindlepw2
+  KOX_RELEASE: "2025.05"
+
+jobs:
+  build:
+    name: Build KUAL Package for Kindle ARMv7
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential autoconf automake bison flex gawk \
+            libtool libtool-bin libncurses-dev curl file git gperf \
+            help2man texinfo unzip wget sed libarchive-dev nettle-dev \
+            pkg-config zip python3 make binutils patchelf \
+            libxcb1-dev libxcb-shm0-dev
+
+      - name: Download prebuilt Kindle toolchain
+        run: |
+          set -euxo pipefail
+
+          cd "$HOME"
+          mkdir -p "$HOME/x-tools"
+
+          curl -fL \
+            -o "/tmp/${TARGET}.tar.gz" \
+            "https://github.com/koreader/koxtoolchain/releases/download/${KOX_RELEASE}/${TARGET}.tar.gz"
+
+          tar -xzf "/tmp/${TARGET}.tar.gz" -C "$HOME"
+
+          echo "Toolchains found:"
+          find "$HOME/x-tools" -maxdepth 4 -type d | sort
+
+      - name: Install Kindle SDK
+        run: |
+          set -euxo pipefail
+
+          git clone --recursive --depth=1 https://github.com/KindleModding/kindle-sdk.git /tmp/kindle-sdk
+          cd /tmp/kindle-sdk
+          chmod +x ./gen-sdk.sh
+          ./gen-sdk.sh "$TARGET"
+
+          echo "Restoring write permissions to patch legacy Amazon headers in sysroot..."
+          chmod -R u+w "$HOME/x-tools"
+
+          echo "Patching legacy Amazon GTK 2.0 headers in sysroot..."
+          find "$HOME/x-tools" -name 'gtkstatusicon.h' -exec sed -i 's/__gtk_reserved\([1-4]\));/__gtk_reserved\1)(void);/g' {} +
+
+      - name: Locate Kindle cross tools
+        run: |
+          set -euxo pipefail
+
+          echo "Searching for Kindle C compiler..."
+          CC_COMPILER="$(find "$HOME/x-tools" -type f -name '*gcc' | grep '/bin/' | head -n 1)"
+          test -x "$CC_COMPILER"
+          echo "KINDLE_CC=$CC_COMPILER" >> "$GITHUB_ENV"
+          echo "Using Kindle C compiler: $CC_COMPILER"
+
+          echo "Searching for Kindle C++ compiler..."
+          CXX_COMPILER="$(find "$HOME/x-tools" -type f \( -name '*g++' -o -name '*c++' \) | grep '/bin/' | head -n 1)"
+          test -x "$CXX_COMPILER"
+          echo "KINDLE_CXX=$CXX_COMPILER" >> "$GITHUB_ENV"
+          echo "Using Kindle C++ compiler: $CXX_COMPILER"
+
+          echo "Searching for Kindle strip tool..."
+          STRIPPER="$(find "$HOME/x-tools" -type f -name '*strip' | grep '/bin/' | head -n 1 || true)"
+          echo "KINDLE_STRIP=$STRIPPER" >> "$GITHUB_ENV"
+          echo "Using strip tool: $STRIPPER"
+
+          echo "Locating sysroot..."
+          SYSROOT="$(find "$HOME/x-tools" -name sysroot -type d | head -n 1)"
+          test -d "$SYSROOT"
+          echo "KINDLE_SYSROOT=$SYSROOT" >> "$GITHUB_ENV"
+          echo "Using sysroot: $SYSROOT"
+
+      - name: Build Gambatte Libretro Core for Kindle ARMv7
+        run: |
+          set -euxo pipefail
+
+          echo "Cloning and building gambatte-libretro core..."
+          git clone --depth=1 https://github.com/libretro/gambatte-libretro.git /tmp/gambatte-libretro
+          cd /tmp/gambatte-libretro
+
+          make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" || \
+            make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX"
+
+          if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
+            "$KINDLE_STRIP" gambatte_libretro.so || true
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/cores"
+          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armhf.so"
+          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro.so"
+
+          echo "Compiled Gambatte core info:"
+          file "$GITHUB_WORKSPACE/cores/gambatte_libretro-armhf.so"
+          ls -lh "$GITHUB_WORKSPACE/cores/"
+
+      - name: Build Gambatte-K2 frontend for Kindle ARMv7
+        run: |
+          set -euxo pipefail
+
+          echo "Configuring cross compilation pkg-config..."
+          export PKG_CONFIG_PATH="$KINDLE_SYSROOT/usr/lib/pkgconfig:$KINDLE_SYSROOT/usr/share/pkgconfig"
+          export PKG_CONFIG_LIBDIR="$KINDLE_SYSROOT/usr/lib/pkgconfig"
+          export PKG_CONFIG_SYSROOT_DIR="$KINDLE_SYSROOT"
+
+          make clean
+          make CC="$KINDLE_CC" \
+               CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function --sysroot=$KINDLE_SYSROOT"
+
+          if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
+            "$KINDLE_STRIP" bin/gambatte-k2 || true
+          fi
+
+          echo "Inspecting compiled ARMv7 binary:"
+          file bin/gambatte-k2
+          ls -lh bin/gambatte-k2
+
+      - name: Package KUAL extension
+        run: |
+          set -euxo pipefail
+
+          chmod +x scripts/package-kual.sh
+          chmod +x extension/gambatte-k2/bin/start.sh
+
+          ./scripts/package-kual.sh
+
+      - name: Upload KUAL zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambatte-k2-kual
+          path: gambatte-k2-kual.zip
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Gambatte-K2 {0}', github.ref_name) || 'Gambatte-K2 Latest Build (PW2/PW3 Optimized)' }}
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          files: gambatte-k2-kual.zip
+          body: |
+            ### 🎮 Gambatte-K2 Cho Kindle Paperwhite 2/3 (Bản tối ưu chống đơ/treo máy)
+
+            Bản phát hành tự động được biên dịch chéo ARMv7 Hard-Float (Cortex-A9, i.MX6 SoloLite) dành cho máy đọc sách Kindle PW2 và PW3 chạy KUAL.
+
+            #### 🚀 Các tối ưu hóa cốt lõi:
+            - **Triệt tiêu Realtime Starvation**: Gỡ bỏ ưu tiên thời gian thực `SCHED_RR` priority 70, luồng game luôn nhường CPU (sleep 1ms khi trễ khung) giúp giao diện GTK và X11 không bao giờ bị đơ cứng.
+            - **Khung hình thích ứng E-Ink (Frame Skipping)**: Game chạy chuẩn tốc độ 60 FPS, nhưng tần suất cập nhật màn hình E-Ink được kiểm soát ở mức an toàn (mặc định 20 FPS) giúp tránh nghẽn hàng đợi phần cứng EPDC kernel (đặc biệt khi Pokémon Red vào trận chiến chớp nháy bảng màu).
+            - **Sửa lỗi kẹt phím cảm ứng**: Sửa triệt để lỗi gán nhầm mã `tracking_id` vào slot tiếp xúc khiến nhân vật bị kẹt phím đi đâm vào tường.
+            - **Tắt Audio an toàn**: Mặc định `audio=false` trong cấu hình vì PW2/PW3 không có phần cứng âm thanh, giúp tiết kiệm bộ nhớ và chu kỳ CPU.
+            - **Tăng chu kỳ Autosave**: Nâng chu kỳ tự động lưu từ 30 giây lên 5 phút để loại bỏ hiện tượng giật đơ do ghi thẻ nhớ eMMC định kỳ.
+
+            #### 📦 Hướng dẫn cài đặt nhanh:
+            1. Tải tệp `gambatte-k2-kual.zip` bên dưới.
+            2. Kết nối máy đọc sách Kindle với máy tính qua cáp USB.
+            3. Giải nén tệp zip và sao chép thư mục `gambatte-k2` vào thư mục `/mnt/us/extensions/` trên Kindle.
+            4. Thêm các ROM Game Boy (`.gb`, `.gbc`) vào Kindle (ví dụ thư mục `/mnt/us/roms/`).
+            5. Ngắt kết nối USB an toàn, mở **KUAL** trên Kindle và chạm vào **Gambatte-K2** để thưởng thức!
