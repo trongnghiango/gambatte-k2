@@ -132,7 +132,7 @@ jobs:
           rm -rf builddir_kindlehf
 
           meson setup --cross-file "$CROSS_FILE" builddir_kindlehf
-          meson compile -C builddir_kindlehf
+          meson compile -C builddir_kindlehf -v
 
           if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
             "$KINDLE_STRIP" builddir_kindlehf/gambatte-k2 || true

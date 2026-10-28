@@ -1392,6 +1392,14 @@ static gboolean __lambda27_ (EmulatorUI* self, GBinding* binding, GValue* srcval
 }
 
 
+static void _vala_g_object_unref_closure (gpointer data, GClosure* closure) {
+	(void) closure;
+	if (data != NULL) {
+		g_object_unref (data);
+	}
+}
+
+
 static gboolean ___lambda27__gbinding_transform_func (GBinding* binding, GValue* source_value, GValue* target_value, gpointer self) {
 	gboolean result;
 	result = __lambda27_ ((EmulatorUI*) self, binding, source_value, target_value);
@@ -2785,7 +2793,7 @@ EmulatorUI* emulator_ui_construct (GType object_type, GError** error) {
 	_tmp193_ = _g_object_ref0 (G_TYPE_CHECK_INSTANCE_TYPE (_tmp192_, TYPE_INK_ROW_TOGGLE_BUTTON) ? ((InkRowToggleButton*) _tmp192_) : NULL);
 	render_mode_toggle = _tmp193_;
 	_tmp194_ = render_mode_toggle;
-	g_object_bind_property_with_closures ((GObject*) self, "render-mode", (GObject*) _tmp194_, "active", G_BINDING_BIDIRECTIONAL | G_BINDING_SYNC_CREATE, (GClosure*) ((___lambda27__gbinding_transform_func == NULL) ? NULL : g_cclosure_new ((GCallback) ___lambda27__gbinding_transform_func, g_object_ref (self), (GClosureNotify) g_object_unref)), (GClosure*) ((___lambda28__gbinding_transform_func == NULL) ? NULL : g_cclosure_new ((GCallback) ___lambda28__gbinding_transform_func, g_object_ref (self), (GClosureNotify) g_object_unref)));
+	g_object_bind_property_with_closures ((GObject*) self, "render-mode", (GObject*) _tmp194_, "active", G_BINDING_BIDIRECTIONAL | G_BINDING_SYNC_CREATE, (GClosure*) ((___lambda27__gbinding_transform_func == NULL) ? NULL : g_cclosure_new ((GCallback) ___lambda27__gbinding_transform_func, g_object_ref (self), _vala_g_object_unref_closure)), (GClosure*) ((___lambda28__gbinding_transform_func == NULL) ? NULL : g_cclosure_new ((GCallback) ___lambda28__gbinding_transform_func, g_object_ref (self), _vala_g_object_unref_closure)));
 	_tmp195_ = self->priv->gamescreen;
 	g_object_bind_property_with_closures ((GObject*) self, "render-mode", (GObject*) _tmp195_, "mode", G_BINDING_DEFAULT | G_BINDING_SYNC_CREATE, (GClosure*) ((NULL == NULL) ? NULL : g_cclosure_new ((GCallback) NULL, NULL, NULL)), (GClosure*) ((NULL == NULL) ? NULL : g_cclosure_new ((GCallback) NULL, NULL, NULL)));
 	g_signal_connect_object ((GObject*) self, "notify::render-mode", (GCallback) ___lambda29__g_object_notify, self, 0);

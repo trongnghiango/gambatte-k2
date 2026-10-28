@@ -56,7 +56,7 @@ c_args = [
 executable(
   'gambatte-k2',
   sources,
-  include_directories: include_directories('.'),
+  include_directories: [include_directories('.'), include_directories('include')],
   dependencies: deps,
   c_args: c_args,
   install: true
