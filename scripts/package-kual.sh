@@ -18,31 +18,32 @@ cp "$ROOT_DIR/extension/gambatte-k2/bin/start.sh" "$DIST_DIR/bin/"
 chmod +x "$DIST_DIR/bin/start.sh"
 
 # 2. Sao chép cấu hình emulator
-cp "$ROOT_DIR/config.ini" "$DIST_DIR/"
+if [ -f "$ROOT_DIR/config.ini" ]; then
+    cp "$ROOT_DIR/config.ini" "$DIST_DIR/"
+fi
 
 # 3. Sao chép binary thực thi
 BIN_SRC="${1:-}"
 if [ -n "$BIN_SRC" ] && [ -f "$BIN_SRC" ]; then
     cp "$BIN_SRC" "$DIST_DIR/bin/gambatte-k2"
     chmod +x "$DIST_DIR/bin/gambatte-k2"
-    echo "  ✓ Đã nạp binary: $BIN_SRC"
-elif [ -f "$ROOT_DIR/builddir_kindlehf/gambatte-k2" ]; then
-    cp "$ROOT_DIR/builddir_kindlehf/gambatte-k2" "$DIST_DIR/bin/"
-    chmod +x "$DIST_DIR/bin/gambatte-k2"
-    echo "  ✓ Đã nạp binary: $ROOT_DIR/builddir_kindlehf/gambatte-k2"
+    echo "  ✓ Đã nạp binary từ đối số: $BIN_SRC"
 elif [ -f "$ROOT_DIR/bin/gambatte-k2" ]; then
-    cp "$ROOT_DIR/bin/gambatte-k2" "$DIST_DIR/bin/"
+    cp "$ROOT_DIR/bin/gambatte-k2" "$DIST_DIR/bin/gambatte-k2"
     chmod +x "$DIST_DIR/bin/gambatte-k2"
     echo "  ✓ Đã nạp binary: $ROOT_DIR/bin/gambatte-k2"
-elif [ -f "$ROOT_DIR/gambatte-k2" ]; then
-    cp "$ROOT_DIR/gambatte-k2" "$DIST_DIR/bin/"
+elif [ -f "$ROOT_DIR/builddir_kindlehf/gambatte-k2" ]; then
+    cp "$ROOT_DIR/builddir_kindlehf/gambatte-k2" "$DIST_DIR/bin/gambatte-k2"
     chmod +x "$DIST_DIR/bin/gambatte-k2"
-    echo "  ✓ Đã nạp binary: $ROOT_DIR/gambatte-k2"
+    echo "  ✓ Đã nạp binary: $ROOT_DIR/builddir_kindlehf/gambatte-k2"
+else
+    echo "  [ERROR] Không tìm thấy binary gambatte-k2!"
+    exit 1
 fi
 
-# 4. Sao chép libretro cores nếu có
+# 4. Sao chép libretro cores
 if [ -d "$ROOT_DIR/cores" ]; then
-    cp -r "$ROOT_DIR/cores/"* "$DIST_DIR/cores/" 2>/dev/null || true
+    cp -r "$ROOT_DIR/cores/." "$DIST_DIR/cores/" 2>/dev/null || true
     echo "  ✓ Đã nạp libretro cores"
 fi
 
@@ -55,7 +56,6 @@ rm -rf "$ROOT_DIR/dist"
 echo "=========================================================="
 echo "  ĐÓNG GÓI THÀNH CÔNG: $OUTPUT_ZIP"
 if [ -f "$OUTPUT_ZIP" ]; then
-    echo "  Kích thước gói: $(ls -lh "$OUTPUT_ZIP" | awk '{print $5}')"
+    ls -lh "$OUTPUT_ZIP"
 fi
-echo "  Cách cài đặt: Giải nén vào thư mục /mnt/us/extensions/ trên Kindle"
 echo "=========================================================="

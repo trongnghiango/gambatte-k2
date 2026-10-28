@@ -137,6 +137,27 @@ jobs:
           file builddir_kindlehf/gambatte-k2
           ls -lh builddir_kindlehf/gambatte-k2
 
+      - name: Package KUAL extension
+        run: |
+          set -euxo pipefail
+
+          mkdir -p bin
+          cp builddir_kindlehf/gambatte-k2 bin/gambatte-k2
+          chmod +x bin/gambatte-k2
+
+          chmod +x scripts/package-kual.sh
+          chmod +x extension/gambatte-k2/bin/start.sh
+
+          bash -x ./scripts/package-kual.sh "$GITHUB_WORKSPACE/bin/gambatte-k2"
+
+          ls -lh gambatte-k2-kual.zip
+
+      - name: Upload KUAL zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambatte-k2-kual
+          path: gambatte-k2-kual.zip
+
       - name: Upload build debug logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -145,21 +166,6 @@ jobs:
           path: |
             builddir_kindlehf/meson-logs/
             /tmp/ninja.log
-
-      - name: Package KUAL extension
-        run: |
-          set -euxo pipefail
-
-          chmod +x scripts/package-kual.sh
-          chmod +x extension/gambatte-k2/bin/start.sh
-
-          ./scripts/package-kual.sh builddir_kindlehf/gambatte-k2
-
-      - name: Upload KUAL zip artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: gambatte-k2-kual
-          path: gambatte-k2-kual.zip
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
