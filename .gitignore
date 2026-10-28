@@ -1,6 +1,7 @@
 *.o
 *.so
-bin/
+/bin/
+!extension/gambatte-k2/bin/
 dist/
 *.zip
 *.log
