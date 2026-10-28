@@ -127,7 +127,17 @@ jobs:
           rm -rf builddir_kindlehf
 
           meson setup --cross-file "$CROSS_FILE" builddir_kindlehf
-          meson compile -C builddir_kindlehf
+          if ! ninja -C builddir_kindlehf -j 1 -v 2>&1 | tee /tmp/ninja.log; then
+              echo "=== NINJA BUILD FAILED ==="
+              git checkout -B ci-error-log
+              cp /tmp/ninja.log ./ci_error.txt
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add ci_error.txt
+              git commit -m "ci: dump ninja error log" || true
+              git push -f origin ci-error-log || true
+              exit 1
+          fi
 
           if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
             "$KINDLE_STRIP" builddir_kindlehf/gambatte-k2 || true
