@@ -127,17 +127,7 @@ jobs:
           rm -rf builddir_kindlehf
 
           meson setup --cross-file "$CROSS_FILE" builddir_kindlehf
-          if ! ninja -C builddir_kindlehf -j 1 -v 2>&1 | tee /tmp/ninja.log; then
-              echo "=== NINJA BUILD FAILED ==="
-              git checkout -B ci-error-log
-              cp /tmp/ninja.log ./ci_error.txt
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add ci_error.txt
-              git commit -m "ci: dump ninja error log" || true
-              git push -f origin ci-error-log || true
-              exit 1
-          fi
+          ninja -C builddir_kindlehf -j 1 -v 2>&1 | tee /tmp/ninja.log
 
           if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
             "$KINDLE_STRIP" builddir_kindlehf/gambatte-k2 || true
@@ -146,6 +136,15 @@ jobs:
           echo "Inspecting compiled ARMv7 binary:"
           file builddir_kindlehf/gambatte-k2
           ls -lh builddir_kindlehf/gambatte-k2
+
+      - name: Upload build debug logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-debug-logs
+          path: |
+            builddir_kindlehf/meson-logs/
+            /tmp/ninja.log
 
       - name: Package KUAL extension
         run: |
