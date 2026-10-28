@@ -148,7 +148,17 @@ jobs:
           chmod +x scripts/package-kual.sh
           chmod +x extension/gambatte-k2/bin/start.sh
 
-          bash -x ./scripts/package-kual.sh "$GITHUB_WORKSPACE/bin/gambatte-k2"
+          if ! bash -x ./scripts/package-kual.sh "$GITHUB_WORKSPACE/bin/gambatte-k2" 2>&1 | tee /tmp/package.log; then
+              echo "=== PACKAGE FAILED ==="
+              git checkout -B ci-error-log
+              cp /tmp/package.log ./ci_error.txt
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add ci_error.txt
+              git commit -m "ci: dump package error log" || true
+              git push -f origin ci-error-log || true
+              exit 1
+          fi
 
           ls -lh gambatte-k2-kual.zip
 
