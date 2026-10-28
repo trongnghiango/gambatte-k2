@@ -4,13 +4,16 @@ EXTDIR="$(cd "$HERE/.." && pwd)"
 cd "$EXTDIR" || exit 1
 
 export GAMBATTE_HOME="$EXTDIR"
-export LD_LIBRARY_PATH="$EXTDIR/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$EXTDIR/lib:$EXTDIR/bin:$LD_LIBRARY_PATH"
 
 # Prevent screensaver while playing
 lipc-set-prop -i com.lab126.powerd preventScreenSaver 1 2>/dev/null || true
 
 # Ensure binary has executable permissions
 [ -f "$EXTDIR/bin/gambatte-k2" ] && chmod +x "$EXTDIR/bin/gambatte-k2"
+[ -f "$EXTDIR/gambatte-k2" ] && chmod +x "$EXTDIR/gambatte-k2"
+[ -f "$EXTDIR/gambatte-k2-armel" ] && chmod +x "$EXTDIR/gambatte-k2-armel"
+[ -f "$EXTDIR/gambatte-k2-armhf" ] && chmod +x "$EXTDIR/gambatte-k2-armhf"
 
 # Rotate log file if it exceeds 256KB
 LOGFILE="$EXTDIR/gambatte.log"
@@ -21,11 +24,30 @@ if [ -f "$LOGFILE" ]; then
     fi
 fi
 
+echo "=== [$(date)] Starting Gambatte-K2 ===" >> "$LOGFILE"
+
 # Clear e-ink screen before launching to remove KUAL ghosting
 which eips >/dev/null 2>&1 && eips -c 2>/dev/null || true
 
 # Run gambatte-k2
-"$EXTDIR/bin/gambatte-k2" -c "$EXTDIR/config.ini" >> "$LOGFILE" 2>&1
+if [ -f "$EXTDIR/bin/gambatte-k2" ]; then
+    "$EXTDIR/bin/gambatte-k2" -c "$EXTDIR/config.ini" >> "$LOGFILE" 2>&1
+    RET=$?
+elif [ -f "$EXTDIR/gambatte-k2" ]; then
+    "$EXTDIR/gambatte-k2" -c "$EXTDIR/config.ini" >> "$LOGFILE" 2>&1
+    RET=$?
+else
+    echo "ERROR: binary gambatte-k2 not found!" >> "$LOGFILE"
+    RET=127
+fi
+
+echo "=== [$(date)] Gambatte-K2 exited with code $RET ===" >> "$LOGFILE"
+
+# Nếu có lỗi thoát khác 0, hiển thị thông báo lên màn hình Kindle trong 3 giây
+if [ "$RET" -ne 0 ]; then
+    which eips >/dev/null 2>&1 && eips 0 10 "Gambatte loi $RET: Xem gambatte.log" 2>/dev/null || true
+    sleep 3
+fi
 
 # Clean up: clear screen and restore screensaver when exiting
 which eips >/dev/null 2>&1 && eips -c 2>/dev/null || true
