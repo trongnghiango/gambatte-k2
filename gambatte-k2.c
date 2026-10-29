@@ -1101,7 +1101,9 @@ int main(int argc, char *argv[]) {
     }
 
     // threading
+#if !GLIB_CHECK_VERSION(2, 32, 0)
     g_thread_init(NULL);
+#endif
     gdk_threads_init();
 
     // mutexes

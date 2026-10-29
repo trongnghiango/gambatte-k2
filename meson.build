@@ -63,6 +63,7 @@ executable(
     '-L' + meson.current_source_dir() / 'cores',
     '-L' + meson.current_source_dir(),
     '-lgambatte_libretro',
+    '-lgthread-2.0',
     '-lstdc++'
   ],
   export_dynamic: true,
