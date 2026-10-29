@@ -154,13 +154,13 @@ static char internal_game_name[17];
 
 // GTK widgets
 static GtkWidget *window, *drawing_area, *drawing_area_container, *joystick_area;
-static GtkWidget *hamburger_btn = NULL, *title_label = NULL;
+static GtkWidget *hamburger_btn = NULL, *title_label = NULL, *refresh_btn = NULL;
 static GtkWidget *popup_menu = NULL;
 static volatile gint drawing_area_abs_x = 0, drawing_area_abs_y = 0;
 static volatile gint joystick_area_abs_x = 0, joystick_area_abs_y = 0;
 static int PIXBUF_WIDTH = 0, PIXBUF_HEIGHT = 0;
 static int SCALE_FACTOR_A = 5;
-static int SCREEN_BORDER = 5;
+static int SCREEN_BORDER = 6;
 
 // Framebuffer/FBInk
 int fbfd = FBFD_AUTO, fbfd_refresh = FBFD_AUTO;
@@ -202,6 +202,38 @@ static void ensure_pixbuf(int width, int height) {
         PIXBUF_HEIGHT = height;
         pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, width, height);
     }
+}
+
+static gboolean on_drawing_container_expose(GtkWidget *widget, GdkEventExpose *event, gpointer data) {
+    GdkWindow *win = gtk_widget_get_window(widget);
+    if (!win) return FALSE;
+    cairo_t *cr = gdk_cairo_create(win);
+    if (!cr) return FALSE;
+
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(widget, &alloc);
+
+    /* Retro Game Boy minimalist screen bezel */
+    if (style_mode == STYLE_MODE_LIGHT) {
+        cairo_set_source_rgb(cr, 0.12, 0.12, 0.12); // Sleek charcoal bezel
+    } else {
+        cairo_set_source_rgb(cr, 0.88, 0.88, 0.88); // Crisp light bezel
+    }
+    cairo_rectangle(cr, 0, 0, alloc.width, alloc.height);
+    cairo_fill(cr);
+
+    /* Subtle inner precision border */
+    if (style_mode == STYLE_MODE_LIGHT) {
+        cairo_set_source_rgb(cr, 0.35, 0.35, 0.35);
+    } else {
+        cairo_set_source_rgb(cr, 0.65, 0.65, 0.65);
+    }
+    cairo_set_line_width(cr, 1.5);
+    cairo_rectangle(cr, 1.0, 1.0, alloc.width - 2.0, alloc.height - 2.0);
+    cairo_stroke(cr);
+
+    cairo_destroy(cr);
+    return FALSE;
 }
 
 static gboolean expose_event(GtkWidget *widget, GdkEventExpose *event, gpointer data) {
@@ -1136,7 +1168,15 @@ void on_open(GtkButton *button, gpointer user_data) {
     pthread_mutex_unlock(&game_loop_mutex);
 
     g_free(game_path);
-    g_atomic_int_set(&refresh_screen, 10);
+    g_atomic_int_set(&refresh_screen, 20);
+    if (window) gtk_widget_queue_draw(window);
+    if (drawing_area) gtk_widget_queue_draw(drawing_area);
+    if (drawing_area_container) gtk_widget_queue_draw(drawing_area_container);
+    if (joystick_area) gtk_widget_queue_draw(joystick_area);
+    while (gtk_events_pending()) {
+        gtk_main_iteration();
+    }
+    system("eips -f 2>/dev/null || true");
 }
 
 void save_state(const char *filename) {
@@ -1270,6 +1310,9 @@ static int load_save_dialog(GtkWindow *parent, StateFileEntry *entries, int acti
     gtk_widget_show_all(dialog);
     gint res = gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
+    while (gtk_events_pending()) {
+        gtk_main_iteration();
+    }
     return res;
 }
 
@@ -1341,16 +1384,21 @@ void on_state_mode_click(GtkButton *button, gpointer user_data) {
 void on_refresh(GtkButton *button, gpointer user_data) {
     pthread_mutex_lock(&game_loop_mutex);
     pthread_mutex_lock(&pixbuf_mutex);
-    fprintf(stdout, "refresh_screen\n");
+    fprintf(stdout, "Manual screen refresh triggered\n");
     if (fbink_refresh) {
         fbink_refresh(fbfd_refresh, drawing_area_abs_y, drawing_area_abs_x, PIXBUF_WIDTH, PIXBUF_HEIGHT, &fbink_cfg_refresh);
     }
     pthread_mutex_unlock(&game_loop_mutex);
     pthread_mutex_unlock(&pixbuf_mutex);
     g_atomic_int_set(&refresh_screen, 30);
-    if (drawing_area) {
-        gtk_widget_queue_draw(drawing_area);
+    if (window) gtk_widget_queue_draw(window);
+    if (drawing_area) gtk_widget_queue_draw(drawing_area);
+    if (drawing_area_container) gtk_widget_queue_draw(drawing_area_container);
+    if (joystick_area) gtk_widget_queue_draw(joystick_area);
+    while (gtk_events_pending()) {
+        gtk_main_iteration();
     }
+    system("eips -f 2>/dev/null || true");
 }
 
 // GTK button callback to quit
@@ -1384,11 +1432,17 @@ static void apply_theme(void) {
         gtk_widget_modify_bg(hamburger_btn, GTK_STATE_NORMAL, &bg_color);
         gtk_widget_modify_fg(hamburger_btn, GTK_STATE_NORMAL, &fg_color);
     }
+    if (refresh_btn) {
+        gtk_widget_modify_bg(refresh_btn, GTK_STATE_NORMAL, &bg_color);
+        gtk_widget_modify_fg(refresh_btn, GTK_STATE_NORMAL, &fg_color);
+    }
     if (title_label) {
         gtk_widget_modify_fg(title_label, GTK_STATE_NORMAL, &fg_color);
     }
 
     if (window) gtk_widget_queue_draw(window);
+    if (drawing_area) gtk_widget_queue_draw(drawing_area);
+    if (drawing_area_container) gtk_widget_queue_draw(drawing_area_container);
     if (joystick_area) gtk_widget_queue_draw(joystick_area);
     g_atomic_int_set(&refresh_screen, 30);
 }
@@ -1558,6 +1612,9 @@ static void show_fullscreen_menu(GtkWindow *parent) {
     gtk_widget_show_all(dialog);
     gint action = gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
+    while (gtk_events_pending()) {
+        gtk_main_iteration();
+    }
 
     /* Dispatch Action */
     switch (action) {
@@ -1616,6 +1673,14 @@ static void show_fullscreen_menu(GtkWindow *parent) {
                 ready = TRUE;
                 pthread_mutex_unlock(&game_loop_mutex);
             }
+            if (window) gtk_widget_queue_draw(window);
+            if (drawing_area) gtk_widget_queue_draw(drawing_area);
+            if (drawing_area_container) gtk_widget_queue_draw(drawing_area_container);
+            if (joystick_area) gtk_widget_queue_draw(joystick_area);
+            while (gtk_events_pending()) {
+                gtk_main_iteration();
+            }
+            system("eips -f 2>/dev/null || true");
             break;
     }
 }
@@ -1683,16 +1748,21 @@ static void init_gtk_and_window() {
     joystick_area  = GTK_WIDGET(gtk_builder_get_object(builder, "joystick_area"));
     hamburger_btn  = GTK_WIDGET(gtk_builder_get_object(builder, "hamburger_btn"));
     title_label    = GTK_WIDGET(gtk_builder_get_object(builder, "title_label"));
+    refresh_btn    = GTK_WIDGET(gtk_builder_get_object(builder, "refresh_btn"));
     GtkWidget *center_hbox = GTK_WIDGET(gtk_builder_get_object(builder, "center_hbox"));
 
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(drawing_area, "expose-event", G_CALLBACK(expose_event), NULL);
     g_signal_connect(drawing_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
+    g_signal_connect(drawing_area_container, "expose-event", G_CALLBACK(on_drawing_container_expose), NULL);
     g_signal_connect(joystick_area, "expose-event", G_CALLBACK(gb_controls_draw), NULL);
     g_signal_connect(joystick_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
 
     if (hamburger_btn) {
         g_signal_connect(hamburger_btn, "clicked", G_CALLBACK(on_hamburger_click), NULL);
+    }
+    if (refresh_btn) {
+        g_signal_connect(refresh_btn, "clicked", G_CALLBACK(on_refresh), NULL);
     }
 
     gtk_widget_set_name(window, "window");

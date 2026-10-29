@@ -229,5 +229,8 @@ char *simple_file_chooser_list(GtkWindow *parent) {
     }
 
     gtk_widget_destroy(dlg);
+    while (gtk_events_pending()) {
+        gtk_main_iteration();
+    }
     return selected_path;
 }

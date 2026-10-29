@@ -34,8 +34,11 @@
                             </packing>
                         </child>
                         <child>
-                            <object class="GtkLabel" id="right_spacer">
-                                <property name="label">      </property>
+                            <object class="GtkButton" id="refresh_btn">
+                                <property name="label">  REFRESH  </property>
+                                <property name="relief">GTK_RELIEF_NONE</property>
+                                <property name="focus_on_click">False</property>
+                                <signal name="clicked" handler="on_refresh_btn_click" />
                             </object>
                             <packing>
                                 <property name="expand">False</property>
