@@ -1,9 +1,10 @@
 project(
   'gambatte-k2',
-  'c',
-  version: '1.2.0',
+  ['c', 'cpp'],
+  version: '2.0.0',
   default_options: [
     'c_std=gnu99',
+    'cpp_std=c++11',
     'warning_level=1',
     'optimization=2',
     'b_ndebug=if-release'
@@ -12,48 +13,55 @@ project(
 )
 
 cc = meson.get_compiler('c')
+cpp = meson.get_compiler('cpp')
 
 gtk_dep = dependency('gtk+-2.0', required: true)
 threads_dep = dependency('threads')
 m_dep = cc.find_library('m', required: false)
 
-gthread_dep = dependency('gthread-2.0', required: false)
-if not gthread_dep.found()
-  gthread_dep = cc.find_library('gthread-2.0', required: true)
+xcb_dep = dependency('xcb', required: false)
+if not xcb_dep.found()
+  xcb_dep = cc.find_library('xcb', required: true)
 endif
 
-gmodule_dep = dependency('gmodule-2.0', required: false)
-if not gmodule_dep.found()
-  gmodule_dep = dependency('gmodule-no-export-2.0', required: false)
-  if not gmodule_dep.found()
-    gmodule_dep = cc.find_library('gmodule-2.0', required: true)
-  endif
+xcb_shm_dep = dependency('xcb-shm', required: false)
+if not xcb_shm_dep.found()
+  xcb_shm_dep = cc.find_library('xcb-shm', required: true)
 endif
 
 deps = [
   gtk_dep,
   threads_dep,
   m_dep,
-  gthread_dep,
-  gmodule_dep
+  xcb_dep,
+  xcb_shm_dep
 ]
 
+# Libretro core dependency
+# Looks in gambatte-source/ or cores/ or current dir
+core_dep = cc.find_library('gambatte_libretro',
+  dirs: [
+    meson.current_source_dir() / 'gambatte-source',
+    meson.current_source_dir() / 'cores',
+    meson.current_source_dir()
+  ],
+  required: false
+)
+if core_dep.found()
+  deps += core_dep
+endif
+
 sources = files(
-  'main.c',
-  'retrocore.c',
-  'gamejoypad.c',
+  'gambatte-k2.c',
   'file_picker.c',
-  'fbink.c',
-  'gray_shm.c',
-  'kindle_compat.c'
+  'gray_shm.c'
 )
 
 c_args = [
   '-Wno-deprecated-declarations',
   '-Wno-unused-variable',
   '-Wno-unused-function',
-  '-Wno-incompatible-pointer-types',
-  '-Wno-int-conversion'
+  '-Wno-incompatible-pointer-types'
 ]
 
 executable(

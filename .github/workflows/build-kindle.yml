@@ -105,17 +105,14 @@ jobs:
           git clone --depth=1 https://github.com/libretro/gambatte-libretro.git /tmp/gambatte-libretro
           cd /tmp/gambatte-libretro
 
-          make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" || \
-            make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX"
-
-          if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
-            "$KINDLE_STRIP" gambatte_libretro.so || true
-          fi
+          make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" STATIC_LINKING=1 || \
+            make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" STATIC_LINKING=1
 
           mkdir -p "$GITHUB_WORKSPACE/cores"
+          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/libgambatte_libretro.a"
+          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro.so"
           cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armhf.so"
           cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armel.so"
-          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro.so"
 
           echo "Compiled Gambatte core info:"
           file "$GITHUB_WORKSPACE/cores/gambatte_libretro-armhf.so"

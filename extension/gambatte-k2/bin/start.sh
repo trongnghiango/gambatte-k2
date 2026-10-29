@@ -31,10 +31,10 @@ which eips >/dev/null 2>&1 && eips -c 2>/dev/null || true
 
 # Run gambatte-k2
 if [ -f "$EXTDIR/bin/gambatte-k2" ]; then
-    "$EXTDIR/bin/gambatte-k2" -c "$EXTDIR/config.ini" >> "$LOGFILE" 2>&1
+    "$EXTDIR/bin/gambatte-k2" >> "$LOGFILE" 2>&1
     RET=$?
 elif [ -f "$EXTDIR/gambatte-k2" ]; then
-    "$EXTDIR/gambatte-k2" -c "$EXTDIR/config.ini" >> "$LOGFILE" 2>&1
+    "$EXTDIR/gambatte-k2" >> "$LOGFILE" 2>&1
     RET=$?
 else
     echo "ERROR: binary gambatte-k2 not found!" >> "$LOGFILE"
