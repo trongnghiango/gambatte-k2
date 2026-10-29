@@ -29,17 +29,114 @@
 #include "main_ui.h"
 
 void sanitize_filename(const char *input, char *output, size_t maxlen);
-void retro_init(void), retro_deinit(void);
-bool retro_load_game(const struct retro_game_info *);
-void retro_unload_game(void);
-void retro_run(void);
-void retro_reset(void);
-void retro_set_environment(retro_environment_t);
-void retro_set_video_refresh(retro_video_refresh_t);
-void retro_set_audio_sample_batch(retro_audio_sample_batch_t);
-void retro_set_input_poll(retro_input_poll_t);
-void retro_set_input_state(retro_input_state_t);
-void retro_get_system_av_info(struct retro_system_av_info *);
+
+static void *core_handle = NULL;
+typedef void (*retro_init_t)(void);
+typedef void (*retro_deinit_t)(void);
+typedef bool (*retro_load_game_t)(const struct retro_game_info *);
+typedef void (*retro_unload_game_t)(void);
+typedef void (*retro_run_t)(void);
+typedef void (*retro_reset_t)(void);
+typedef void (*retro_set_environment_t)(retro_environment_t);
+typedef void (*retro_set_video_refresh_t)(retro_video_refresh_t);
+typedef void (*retro_set_audio_sample_batch_t)(retro_audio_sample_batch_t);
+typedef void (*retro_set_input_poll_t)(retro_input_poll_t);
+typedef void (*retro_set_input_state_t)(retro_input_state_t);
+typedef void (*retro_get_system_av_info_t)(struct retro_system_av_info *);
+typedef size_t (*retro_serialize_size_t)(void);
+typedef bool (*retro_serialize_t)(void *, size_t);
+typedef bool (*retro_unserialize_t)(const void *, size_t);
+
+#define retro_init core_retro_init
+#define retro_deinit core_retro_deinit
+#define retro_load_game core_retro_load_game
+#define retro_unload_game core_retro_unload_game
+#define retro_run core_retro_run
+#define retro_reset core_retro_reset
+#define retro_set_environment core_retro_set_environment
+#define retro_set_video_refresh core_retro_set_video_refresh
+#define retro_set_audio_sample_batch core_retro_set_audio_sample_batch
+#define retro_set_input_poll core_retro_set_input_poll
+#define retro_set_input_state core_retro_set_input_state
+#define retro_get_system_av_info core_retro_get_system_av_info
+#define retro_serialize_size core_retro_serialize_size
+#define retro_serialize core_retro_serialize
+#define retro_unserialize core_retro_unserialize
+
+static retro_init_t core_retro_init = NULL;
+static retro_deinit_t core_retro_deinit = NULL;
+static retro_load_game_t core_retro_load_game = NULL;
+static retro_unload_game_t core_retro_unload_game = NULL;
+static retro_run_t core_retro_run = NULL;
+static retro_reset_t core_retro_reset = NULL;
+static retro_set_environment_t core_retro_set_environment = NULL;
+static retro_set_video_refresh_t core_retro_set_video_refresh = NULL;
+static retro_set_audio_sample_batch_t core_retro_set_audio_sample_batch = NULL;
+static retro_set_input_poll_t core_retro_set_input_poll = NULL;
+static retro_set_input_state_t core_retro_set_input_state = NULL;
+static retro_get_system_av_info_t core_retro_get_system_av_info = NULL;
+static retro_serialize_size_t core_retro_serialize_size = NULL;
+static retro_serialize_t core_retro_serialize = NULL;
+static retro_unserialize_t core_retro_unserialize = NULL;
+
+/* FBInk stubs in case libfbink is not installed */
+int fbink_init(int fbfd, const FBInkConfig* restrict fbink_cfg) { (void)fbfd; (void)fbink_cfg; return -1; }
+int fbink_refresh(int fbfd, uint32_t region_top, uint32_t region_left, uint32_t region_width, uint32_t region_height, const FBInkConfig* restrict fbink_cfg) { (void)fbfd; (void)region_top; (void)region_left; (void)region_width; (void)region_height; (void)fbink_cfg; return 0; }
+int fbink_print_raw_data(int fbfd, const unsigned char* restrict data, const int w, const int h, const size_t len, short int x_off, short int y_off, const FBInkConfig* restrict fbink_cfg) { (void)fbfd; (void)data; (void)w; (void)h; (void)len; (void)x_off; (void)y_off; (void)fbink_cfg; return 0; }
+FBInkInputDevice* fbink_input_scan(uint32_t match_types, uint32_t exclude_types, uint32_t settings, size_t* result_length1) { (void)match_types; (void)exclude_types; (void)settings; if (result_length1) *result_length1 = 0; return NULL; }
+
+static bool load_core(void) {
+    if (core_handle && retro_init && retro_load_game && retro_run) return true;
+
+    const char *candidates[] = {
+        "cores/gambatte_libretro.so",
+        "cores/gambatte_libretro-armhf.so",
+        "cores/gambatte_libretro-armel.so",
+        "gambatte_libretro.so",
+        "gambatte_libretro-armhf.so",
+        "gambatte_libretro-armel.so",
+        "/mnt/us/extensions/gambatte-k2/cores/gambatte_libretro.so",
+        "/mnt/us/extensions/gambatte-k2/cores/gambatte_libretro-armhf.so",
+        "/mnt/us/extensions/gambatte-k2/cores/gambatte_libretro-armel.so",
+        "/mnt/us/extensions/gambatte-k2/gambatte_libretro.so",
+        "/mnt/us/extensions/gambatte-k2/gambatte_libretro-armhf.so",
+        "/mnt/us/extensions/gambatte-k2/gambatte_libretro-armel.so",
+        NULL
+    };
+
+    for (int i = 0; candidates[i] != NULL; i++) {
+        if (access(candidates[i], R_OK) == 0) {
+            core_handle = dlopen(candidates[i], RTLD_LAZY | RTLD_GLOBAL);
+            if (core_handle) {
+                fprintf(stdout, "Successfully loaded core from: %s\n", candidates[i]);
+                break;
+            }
+        }
+    }
+
+    if (!core_handle) {
+        fprintf(stderr, "Failed to load gambatte libretro core\n");
+        return false;
+    }
+
+    retro_init = (retro_init_t)dlsym(core_handle, "retro_init");
+    retro_deinit = (retro_deinit_t)dlsym(core_handle, "retro_deinit");
+    retro_load_game = (retro_load_game_t)dlsym(core_handle, "retro_load_game");
+    retro_unload_game = (retro_unload_game_t)dlsym(core_handle, "retro_unload_game");
+    retro_run = (retro_run_t)dlsym(core_handle, "retro_run");
+    retro_reset = (retro_reset_t)dlsym(core_handle, "retro_reset");
+    retro_set_environment = (retro_set_environment_t)dlsym(core_handle, "retro_set_environment");
+    retro_set_video_refresh = (retro_set_video_refresh_t)dlsym(core_handle, "retro_set_video_refresh");
+    retro_set_audio_sample_batch = (retro_set_audio_sample_batch_t)dlsym(core_handle, "retro_set_audio_sample_batch");
+    retro_set_input_poll = (retro_set_input_poll_t)dlsym(core_handle, "retro_set_input_poll");
+    retro_set_input_state = (retro_set_input_state_t)dlsym(core_handle, "retro_set_input_state");
+    retro_get_system_av_info = (retro_get_system_av_info_t)dlsym(core_handle, "retro_get_system_av_info");
+    retro_serialize_size = (retro_serialize_size_t)dlsym(core_handle, "retro_serialize_size");
+    retro_serialize = (retro_serialize_t)dlsym(core_handle, "retro_serialize");
+    retro_unserialize = (retro_unserialize_t)dlsym(core_handle, "retro_unserialize");
+
+    return (retro_init && retro_load_game && retro_run);
+}
 
 static char internal_game_name[17];
 
@@ -647,12 +744,7 @@ static bool environment_cb(unsigned cmd, void *data) {
 static gpointer emulator_thread_fn(gpointer data) {
 
     // const int frame_interval_us = 16742; // FRAME_USEC;
-    struct sched_param param;
-    param.sched_priority = 70;
-
-    if (pthread_setschedparam(pthread_self(), SCHED_RR, &param) != 0) {
-        perror("pthread_setschedparam for emulator_thread_fn");
-    }
+    /* Normal CFS scheduling on single-core CPU */
 
     while (running) {
 
@@ -693,22 +785,29 @@ void on_open(GtkButton *button, gpointer user_data) {
         if (game_path) {
             g_print("game_path: %s\n", game_path);
 
+            if (!load_core()) {
+                g_print("Failed to load libretro core\n");
+                g_mutex_unlock(game_loop_mutex);
+                g_free(game_path);
+                return;
+            }
+
             if(game.data) {
-                retro_unload_game();
-                retro_reset();
-                retro_deinit();
+                if (retro_unload_game) retro_unload_game();
+                if (retro_reset) retro_reset();
+                if (retro_deinit) retro_deinit();
                 audio_backend_deinit(&ab);
             }
 
-            retro_set_environment(environment_cb);
-            retro_set_video_refresh(video_refresh);
-            retro_set_audio_sample_batch(audio_sample_batch);
-            retro_set_input_poll(input_poll);
-            retro_set_input_state(input_state);
+            if (retro_set_environment) retro_set_environment(environment_cb);
+            if (retro_set_video_refresh) retro_set_video_refresh(video_refresh);
+            if (retro_set_audio_sample_batch) retro_set_audio_sample_batch(audio_sample_batch);
+            if (retro_set_input_poll) retro_set_input_poll(input_poll);
+            if (retro_set_input_state) retro_set_input_state(input_state);
 
             fprintf(stdout, "Loaded core symbols\n");
 
-            retro_init();
+            if (retro_init) retro_init();
 
             g_print("game_path 2: %s\n", game_path);
  
@@ -767,6 +866,7 @@ void on_open(GtkButton *button, gpointer user_data) {
 
 /////
 void save_state(const char *filename) {
+    if (!retro_serialize_size || !retro_serialize) return;
     size_t size = retro_serialize_size();
     if (size == 0) return;
     void *state = malloc(size);
@@ -786,6 +886,7 @@ void save_state(const char *filename) {
 }
 
 void load_state(const char *filename) {
+    if (!retro_serialize_size || !retro_unserialize) return;
     size_t size = retro_serialize_size();
     if (size == 0) return;
     void *state = malloc(size);
@@ -1134,7 +1235,7 @@ int main(int argc, char *argv[]) {
     
     // Cleanup
     if (game.data) {
-        retro_deinit();
+        if (retro_deinit) retro_deinit();
         free((void*)game.data);
     }
 

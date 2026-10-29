@@ -22,23 +22,16 @@ if not gthread_dep.found()
   gthread_dep = cc.find_library('gthread-2.0', required: true)
 endif
 
+dl_dep = cc.find_library('dl', required: false)
+
 deps = [
   gtk_dep,
   threads_dep,
   m_dep,
   gthread_dep
 ]
-
-# Libretro core: link libgambatte_libretro.a (statically built archive)
-core_dep = cc.find_library('gambatte_libretro',
-  dirs: [
-    meson.current_source_dir() / 'cores',
-    meson.current_source_dir()
-  ],
-  required: false
-)
-if core_dep.found()
-  deps += core_dep
+if dl_dep.found()
+  deps += dl_dep
 endif
 
 sources = files(
@@ -59,13 +52,7 @@ executable(
   include_directories: [include_directories('.'), include_directories('include')],
   dependencies: deps,
   c_args: c_args,
-  link_args: [
-    '-L' + meson.current_source_dir() / 'cores',
-    '-L' + meson.current_source_dir(),
-    '-lgambatte_libretro',
-    '-lgthread-2.0',
-    '-lstdc++'
-  ],
+  link_args: ['-ldl', '-lm'],
   export_dynamic: true,
   install: true
 )
