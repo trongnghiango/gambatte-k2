@@ -163,11 +163,14 @@ jobs:
       - name: Dump build debug logs on failure
         if: failure()
         run: |
-          echo "### Build Error Log" >> "$GITHUB_STEP_SUMMARY"
-          echo '```text' >> "$GITHUB_STEP_SUMMARY"
-          cat /tmp/ninja.log >> "$GITHUB_STEP_SUMMARY" || true
-          cat builddir_kindlehf/meson-logs/meson-log.txt >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "=== NINJA LOG ==="
+          cat /tmp/ninja.log || true
+          echo "=== MESON LOG ==="
+          cat builddir_kindlehf/meson-logs/meson-log.txt || true
+          gh release delete "build-failure-log" --yes 2>/dev/null || true
+          gh release create "build-failure-log" /tmp/ninja.log builddir_kindlehf/meson-logs/meson-log.txt --title "Build Failure Log" --notes "Debug logs" || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build debug logs on failure
         if: failure()
