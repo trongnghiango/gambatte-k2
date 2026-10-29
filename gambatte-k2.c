@@ -476,12 +476,12 @@ static void on_area_configure_event(GtkWidget *widget, GdkEvent *event, gpointer
         int w = allocation.width;
         int h = allocation.height;
 
-        double dpad_cx = w * 0.22;
-        double dpad_cy = h * 0.46;
-        double dpad_petal_h = h * 0.20;
-        double dpad_gap = w * 0.015;
+        double dpad_cx = w * 0.224;
+        double dpad_cy = h * 0.45;
+        double dpad_petal_h = h * 0.222;
+        double dpad_gap = w * 0.019;
         double dpad_dist = dpad_gap + dpad_petal_h * 0.55;
-        int dpad_hitbox_r = (int)(dpad_petal_h * 0.60);
+        int dpad_hitbox_r = (int)(dpad_petal_h * 0.70);
 
         // UP
         g_atomic_int_set(&gb_button_regions[GB_UP].x, (int)dpad_cx);
@@ -504,24 +504,24 @@ static void on_area_configure_event(GtkWidget *widget, GdkEvent *event, gpointer
         g_atomic_int_set(&gb_button_regions[GB_RIGHT].r, dpad_hitbox_r);
 
         // B
-        g_atomic_int_set(&gb_button_regions[GB_B].x, (int)(w * 0.72));
-        g_atomic_int_set(&gb_button_regions[GB_B].y, (int)(h * 0.54));
-        g_atomic_int_set(&gb_button_regions[GB_B].r, (int)(w * 0.055));
+        g_atomic_int_set(&gb_button_regions[GB_B].x, (int)(w * 0.71));
+        g_atomic_int_set(&gb_button_regions[GB_B].y, (int)(h * 0.53));
+        g_atomic_int_set(&gb_button_regions[GB_B].r, (int)(w * 0.068));
 
         // A
         g_atomic_int_set(&gb_button_regions[GB_A].x, (int)(w * 0.86));
-        g_atomic_int_set(&gb_button_regions[GB_A].y, (int)(h * 0.36));
-        g_atomic_int_set(&gb_button_regions[GB_A].r, (int)(w * 0.055));
+        g_atomic_int_set(&gb_button_regions[GB_A].y, (int)(h * 0.31));
+        g_atomic_int_set(&gb_button_regions[GB_A].r, (int)(w * 0.068));
 
         // SELECT
-        g_atomic_int_set(&gb_button_regions[GB_SELECT].x, (int)(w * 0.44));
+        g_atomic_int_set(&gb_button_regions[GB_SELECT].x, (int)(w * 0.43));
         g_atomic_int_set(&gb_button_regions[GB_SELECT].y, (int)(h * 0.86));
-        g_atomic_int_set(&gb_button_regions[GB_SELECT].r, 52);
+        g_atomic_int_set(&gb_button_regions[GB_SELECT].r, 58);
 
         // START
-        g_atomic_int_set(&gb_button_regions[GB_START].x, (int)(w * 0.56));
+        g_atomic_int_set(&gb_button_regions[GB_START].x, (int)(w * 0.57));
         g_atomic_int_set(&gb_button_regions[GB_START].y, (int)(h * 0.86));
-        g_atomic_int_set(&gb_button_regions[GB_START].r, 52);
+        g_atomic_int_set(&gb_button_regions[GB_START].r, 58);
 
         fprintf(stdout, "joystick_area abs pos: %4d %4d (w:%4d h:%4d)\n", abs_x, abs_y, w, h);
     }
@@ -550,13 +550,13 @@ static void draw_dpad_petal(cairo_t *cr, double cx, double cy, double petal_w, d
         if (mode == STYLE_MODE_LIGHT) {
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
             cairo_fill_preserve(cr);
-            cairo_set_line_width(cr, 3.0);
+            cairo_set_line_width(cr, 3.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         } else {
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
             cairo_fill_preserve(cr);
-            cairo_set_line_width(cr, 3.0);
+            cairo_set_line_width(cr, 3.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
         }
@@ -565,30 +565,30 @@ static void draw_dpad_petal(cairo_t *cr, double cx, double cy, double petal_w, d
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
             cairo_fill_preserve(cr);
             cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-            cairo_set_line_width(cr, 3.0);
+            cairo_set_line_width(cr, 3.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
         } else {
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
             cairo_fill_preserve(cr);
             cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
-            cairo_set_line_width(cr, 3.0);
+            cairo_set_line_width(cr, 3.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
         }
     }
 
     double c_y = (y_top + y_sh) / 2.0;
-    double c_w = petal_w * 0.22;
-    double c_h = petal_h * 0.16;
+    double c_w = petal_w * 0.24;
+    double c_h = petal_h * 0.18;
 
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
     cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-    cairo_set_line_width(cr, 3.5);
+    cairo_set_line_width(cr, 4.5);
 
-    cairo_move_to(cr, -c_w, c_y + c_h * 0.4);
-    cairo_line_to(cr, 0, c_y - c_h * 0.6);
-    cairo_line_to(cr, c_w, c_y + c_h * 0.4);
+    cairo_move_to(cr, -c_w, c_y + c_h * 0.45);
+    cairo_line_to(cr, 0, c_y - c_h * 0.55);
+    cairo_line_to(cr, c_w, c_y + c_h * 0.45);
     cairo_stroke(cr);
 
     cairo_restore(cr);
@@ -602,13 +602,13 @@ static void draw_action_button(cairo_t *cr, double cx, double cy, double radius,
         if (mode == STYLE_MODE_LIGHT) {
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
             cairo_fill_preserve(cr);
-            cairo_set_line_width(cr, 3.0);
+            cairo_set_line_width(cr, 3.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         } else {
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
             cairo_fill_preserve(cr);
-            cairo_set_line_width(cr, 3.0);
+            cairo_set_line_width(cr, 3.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
         }
@@ -617,21 +617,21 @@ static void draw_action_button(cairo_t *cr, double cx, double cy, double radius,
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
             cairo_fill_preserve(cr);
             cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-            cairo_set_line_width(cr, 3.0);
+            cairo_set_line_width(cr, 3.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
         } else {
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
             cairo_fill_preserve(cr);
             cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
-            cairo_set_line_width(cr, 3.0);
+            cairo_set_line_width(cr, 3.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
         }
     }
 
     cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, radius * 0.65);
+    cairo_set_font_size(cr, radius * 0.70);
     cairo_text_extents_t te;
     cairo_text_extents(cr, label, &te);
     cairo_move_to(cr, cx - te.width / 2.0 - te.x_bearing, cy + te.height / 2.0);
@@ -652,13 +652,13 @@ static void draw_capsule_button(cairo_t *cr, double cx, double cy, double w, dou
         if (mode == STYLE_MODE_LIGHT) {
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
             cairo_fill_preserve(cr);
-            cairo_set_line_width(cr, 2.0);
+            cairo_set_line_width(cr, 2.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         } else {
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
             cairo_fill_preserve(cr);
-            cairo_set_line_width(cr, 2.0);
+            cairo_set_line_width(cr, 2.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
         }
@@ -667,21 +667,21 @@ static void draw_capsule_button(cairo_t *cr, double cx, double cy, double w, dou
             cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
             cairo_fill_preserve(cr);
             cairo_set_source_rgb(cr, 0.2, 0.2, 0.2);
-            cairo_set_line_width(cr, 2.0);
+            cairo_set_line_width(cr, 2.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.2, 0.2, 0.2);
         } else {
             cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
             cairo_fill_preserve(cr);
             cairo_set_source_rgb(cr, 0.8, 0.8, 0.8);
-            cairo_set_line_width(cr, 2.0);
+            cairo_set_line_width(cr, 2.5);
             cairo_stroke(cr);
             cairo_set_source_rgb(cr, 0.8, 0.8, 0.8);
         }
     }
 
     cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, 13.0);
+    cairo_set_font_size(cr, 15.0);
     cairo_text_extents_t te;
     cairo_text_extents(cr, label, &te);
     cairo_move_to(cr, cx - te.width / 2.0 - te.x_bearing, cy + te.height / 2.0);
@@ -712,41 +712,41 @@ static gboolean gb_controls_draw(GtkWidget *widget, GdkEventExpose *event, gpoin
     } else {
         cairo_set_source_rgb(cr, 0.22, 0.22, 0.22);
     }
-    cairo_set_line_width(cr, 1.0);
+    cairo_set_line_width(cr, 1.5);
     cairo_move_to(cr, 0, 0);
     cairo_line_to(cr, width, 0);
     cairo_stroke(cr);
 
-    // D-Pad
-    double dpad_cx = width * 0.22;
-    double dpad_cy = height * 0.46;
-    double petal_w = width * 0.075;
-    double petal_h = height * 0.20;
-    double center_gap = width * 0.015;
-    double r_corner = 14.0;
+    // Prominent, generous D-Pad
+    double dpad_cx = width * 0.224;
+    double dpad_cy = height * 0.45;
+    double petal_w = width * 0.086;
+    double petal_h = height * 0.222;
+    double center_gap = width * 0.019;
+    double r_corner = 18.0;
 
     draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, 0, gb_button_state[GB_UP], style_mode);
     draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, M_PI / 2.0, gb_button_state[GB_RIGHT], style_mode);
     draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, M_PI, gb_button_state[GB_DOWN], style_mode);
     draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, 3.0 * M_PI / 2.0, gb_button_state[GB_LEFT], style_mode);
 
-    // Action Buttons A and B
-    double btn_b_x = width * 0.72;
-    double btn_b_y = height * 0.54;
+    // Action Buttons A and B (Big and comfortable)
+    double btn_b_x = width * 0.71;
+    double btn_b_y = height * 0.53;
     double btn_a_x = width * 0.86;
-    double btn_a_y = height * 0.36;
-    double btn_r = width * 0.044;
+    double btn_a_y = height * 0.31;
+    double btn_r = width * 0.050;
 
     draw_action_button(cr, btn_b_x, btn_b_y, btn_r, "B", gb_button_state[GB_B], style_mode);
     draw_action_button(cr, btn_a_x, btn_a_y, btn_r, "A", gb_button_state[GB_A], style_mode);
 
     // Capsule Buttons SELECT and START
-    double sel_x = width * 0.44;
+    double sel_x = width * 0.43;
     double sel_y = height * 0.86;
-    double sta_x = width * 0.56;
+    double sta_x = width * 0.57;
     double sta_y = height * 0.86;
-    double cap_w = 88.0;
-    double cap_h = 28.0;
+    double cap_w = 104.0;
+    double cap_h = 36.0;
 
     draw_capsule_button(cr, sel_x, sel_y, cap_w, cap_h, "SELECT", gb_button_state[GB_SELECT], style_mode);
     draw_capsule_button(cr, sta_x, sta_y, cap_w, cap_h, "START", gb_button_state[GB_START], style_mode);
@@ -1377,7 +1377,7 @@ static void init_gtk_and_window() {
     if (screen_height <= 0) screen_height = 1448;
 
     gtk_window_set_default_size(GTK_WINDOW(window), screen_width, screen_height);
-    gtk_window_set_title(GTK_WINDOW(window), "L:A_N:application_ID:gambatte_PC:N_O:URL_DM:PZ");
+    gtk_window_set_title(GTK_WINDOW(window), "L:A_N:application_ID:gambatte_PC:N");
     gtk_window_fullscreen(GTK_WINDOW(window));
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
 

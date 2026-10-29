@@ -3,7 +3,7 @@
 <interface>
     <requires lib="gtk+" version="2.16" />
     <object class="GtkWindow" id="main_window">
-        <property name="title">L:A_N:application_ID:gambatte_PC:N_O:URL_DM:PZ</property>
+        <property name="title">L:A_N:application_ID:gambatte_PC:N</property>
         <property name="resizable">True</property>
         <child>
             <object class="GtkVBox" id="main_vbox">
