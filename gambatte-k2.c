@@ -89,33 +89,45 @@ static bool load_core(void) {
     if (core_handle && retro_init && retro_load_game && retro_run) return true;
 
     const char *candidates[] = {
-        "cores/gambatte_libretro.so",
-        "cores/gambatte_libretro-armhf.so",
-        "cores/gambatte_libretro-armel.so",
-        "gambatte_libretro.so",
-        "gambatte_libretro-armhf.so",
-        "gambatte_libretro-armel.so",
         "/mnt/us/extensions/gambatte-k2/cores/gambatte_libretro.so",
         "/mnt/us/extensions/gambatte-k2/cores/gambatte_libretro-armhf.so",
         "/mnt/us/extensions/gambatte-k2/cores/gambatte_libretro-armel.so",
         "/mnt/us/extensions/gambatte-k2/gambatte_libretro.so",
         "/mnt/us/extensions/gambatte-k2/gambatte_libretro-armhf.so",
         "/mnt/us/extensions/gambatte-k2/gambatte_libretro-armel.so",
+        "/mnt/us/extensions/gambatte-k2/bin/gambatte_libretro.so",
+        "/mnt/us/extensions/gambatte-k2/bin/gambatte_libretro-armhf.so",
+        "cores/gambatte_libretro.so",
+        "cores/gambatte_libretro-armhf.so",
+        "cores/gambatte_libretro-armel.so",
+        "gambatte_libretro.so",
+        "gambatte_libretro-armhf.so",
+        "gambatte_libretro-armel.so",
         NULL
     };
 
+    const char *last_err = "No candidate readable";
     for (int i = 0; candidates[i] != NULL; i++) {
         if (access(candidates[i], R_OK) == 0) {
+            fprintf(stderr, "Attempting dlopen on: %s\n", candidates[i]);
+            fflush(stderr);
+            dlerror();
             core_handle = dlopen(candidates[i], RTLD_LAZY | RTLD_GLOBAL);
             if (core_handle) {
-                fprintf(stdout, "Successfully loaded core from: %s\n", candidates[i]);
+                fprintf(stderr, "Successfully loaded core from: %s\n", candidates[i]);
+                fflush(stderr);
                 break;
+            } else {
+                last_err = dlerror();
+                fprintf(stderr, "dlopen failed for %s: %s\n", candidates[i], last_err ? last_err : "unknown");
+                fflush(stderr);
             }
         }
     }
 
     if (!core_handle) {
-        fprintf(stderr, "Failed to load gambatte libretro core\n");
+        fprintf(stderr, "Failed to load gambatte libretro core. Last error: %s\n", last_err ? last_err : "unknown");
+        fflush(stderr);
         return false;
     }
 

@@ -60,6 +60,12 @@ if [ -f "$DIST_DIR/config.ini" ]; then
     cp -f "$DIST_DIR/config.ini" "$DIST_DIR/bin/config.ini" 2>/dev/null || true
 fi
 
+# 4.5. Sao chép runtime libraries nếu có
+if [ -d "$ROOT_DIR/lib" ]; then
+    cp -r "$ROOT_DIR/lib/." "$DIST_DIR/lib/" 2>/dev/null || true
+    echo "  ✓ Đã nạp runtime libraries vào lib/"
+fi
+
 # 5. Đóng gói ZIP bằng python3 zipfile
 python3 -c "
 import os, zipfile
