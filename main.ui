@@ -54,19 +54,44 @@
                     </packing>
                 </child>
                 <child>
-                    <object class="GtkHBox" id="center_hbox">
+                    <object class="GtkNotebook" id="main_notebook">
+                        <property name="show_tabs">False</property>
+                        <property name="show_border">False</property>
                         <child>
-                            <object class="GtkLabel" id="left_spacer" />
-                        </child>
-                        <child>
-                            <object class="GtkVBox" id="center_vbox">
+                            <object class="GtkVBox" id="page_game">
+                                <property name="spacing">0</property>
                                 <child>
-                                    <object class="GtkLabel" id="top_spacer" />
-                                </child>
-                                <child>
-                                    <object class="GtkEventBox" id="drawing_area_container">
+                                    <object class="GtkHBox" id="center_hbox">
                                         <child>
-                                            <object class="GtkDrawingArea" id="drawing_area" />
+                                            <object class="GtkLabel" id="left_spacer" />
+                                        </child>
+                                        <child>
+                                            <object class="GtkVBox" id="center_vbox">
+                                                <child>
+                                                    <object class="GtkLabel" id="top_spacer" />
+                                                </child>
+                                                <child>
+                                                    <object class="GtkEventBox" id="drawing_area_container">
+                                                        <child>
+                                                            <object class="GtkDrawingArea" id="drawing_area" />
+                                                        </child>
+                                                    </object>
+                                                    <packing>
+                                                        <property name="expand">False</property>
+                                                        <property name="fill">False</property>
+                                                    </packing>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkLabel" id="bottom_spacer" />
+                                                </child>
+                                            </object>
+                                            <packing>
+                                                <property name="expand">False</property>
+                                                <property name="fill">False</property>
+                                            </packing>
+                                        </child>
+                                        <child>
+                                            <object class="GtkLabel" id="right_spacer_outer" />
                                         </child>
                                     </object>
                                     <packing>
@@ -75,25 +100,15 @@
                                     </packing>
                                 </child>
                                 <child>
-                                    <object class="GtkLabel" id="bottom_spacer" />
+                                    <object class="GtkDrawingArea" id="joystick_area" />
+                                    <packing>
+                                        <property name="expand">True</property>
+                                        <property name="fill">True</property>
+                                    </packing>
                                 </child>
                             </object>
-                            <packing>
-                                <property name="expand">False</property>
-                                <property name="fill">False</property>
-                            </packing>
-                        </child>
-                        <child>
-                            <object class="GtkLabel" id="right_spacer_outer" />
                         </child>
                     </object>
-                    <packing>
-                        <property name="expand">False</property>
-                        <property name="fill">False</property>
-                    </packing>
-                </child>
-                <child>
-                    <object class="GtkDrawingArea" id="joystick_area" />
                     <packing>
                         <property name="expand">True</property>
                         <property name="fill">True</property>

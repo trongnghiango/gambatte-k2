@@ -12,15 +12,33 @@ enum {
 };
 
 static gchar *current_dir = NULL;
-static gchar *selected_path = NULL;
-static gboolean is_updating = FALSE;
+static GtkListStore *global_rom_store = NULL;
+static GtkWidget *global_path_lbl = NULL;
+static void (*global_on_selected_cb)(const char *path) = NULL;
+static void (*global_on_back_cb)(void) = NULL;
 
 static void update_tree_view(GtkListStore *store) {
+    if (!store) return;
     GDir *d;
     const gchar *name;
     gchar full[1024];
 
-    is_updating = TRUE;
+    if (!current_dir) {
+        if (g_file_test("/mnt/us/roms", G_FILE_TEST_IS_DIR)) {
+            current_dir = g_strdup("/mnt/us/roms");
+        } else if (g_file_test("/mnt/us", G_FILE_TEST_IS_DIR)) {
+            current_dir = g_strdup("/mnt/us");
+        } else {
+            current_dir = g_get_current_dir();
+        }
+    }
+
+    if (global_path_lbl) {
+        gchar *path_text = g_strdup_printf("Folder: %s", current_dir);
+        gtk_label_set_text(GTK_LABEL(global_path_lbl), path_text);
+        g_free(path_text);
+    }
+
     gtk_list_store_clear(store);
 
     /* 1. Go up entry */
@@ -32,10 +50,7 @@ static void update_tree_view(GtkListStore *store) {
 
     /* 2. Read directory entries */
     d = g_dir_open(current_dir, 0, NULL);
-    if (!d) {
-        is_updating = FALSE;
-        return;
-    }
+    if (!d) return;
 
     GList *dir_list = NULL;
     GList *rom_list = NULL;
@@ -88,8 +103,27 @@ static void update_tree_view(GtkListStore *store) {
         g_free(l->data);
     }
     g_list_free(rom_list);
+}
 
-    is_updating = FALSE;
+void refresh_rom_picker_view(void) {
+    if (global_rom_store) {
+        update_tree_view(global_rom_store);
+    }
+}
+
+static void on_rom_row_chosen(const char *filepath) {
+    struct stat st;
+    if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
+        g_free(current_dir);
+        current_dir = g_strdup(filepath);
+        if (global_rom_store) {
+            update_tree_view(global_rom_store);
+        }
+    } else {
+        if (global_on_selected_cb) {
+            global_on_selected_cb(filepath);
+        }
+    }
 }
 
 static gboolean on_tree_button_release(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
@@ -105,17 +139,7 @@ static gboolean on_tree_button_release(GtkWidget *widget, GdkEventButton *event,
             gchar *filepath = NULL;
             gtk_tree_model_get(model, &iter, COL_PATH, &filepath, -1);
             if (filepath) {
-                struct stat st;
-                if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
-                    g_free(current_dir);
-                    current_dir = g_strdup(filepath);
-                    update_tree_view(GTK_LIST_STORE(model));
-                } else {
-                    g_free(selected_path);
-                    selected_path = g_strdup(filepath);
-                    GtkDialog *dlg = GTK_DIALOG(user_data);
-                    gtk_dialog_response(dlg, GTK_RESPONSE_ACCEPT);
-                }
+                on_rom_row_chosen(filepath);
                 g_free(filepath);
             }
         }
@@ -132,105 +156,73 @@ static void on_tree_row_activated(GtkTreeView *tree_view, GtkTreePath *path, Gtk
         gchar *filepath = NULL;
         gtk_tree_model_get(model, &iter, COL_PATH, &filepath, -1);
         if (filepath) {
-            struct stat st;
-            if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
-                g_free(current_dir);
-                current_dir = g_strdup(filepath);
-                update_tree_view(GTK_LIST_STORE(model));
-            } else {
-                g_free(selected_path);
-                selected_path = g_strdup(filepath);
-                GtkDialog *dlg = GTK_DIALOG(user_data);
-                gtk_dialog_response(dlg, GTK_RESPONSE_ACCEPT);
-            }
+            on_rom_row_chosen(filepath);
             g_free(filepath);
         }
     }
 }
 
-char *simple_file_chooser_list(GtkWindow *parent) {
-    GtkWidget *dlg, *sw, *tree;
-    GtkListStore *store;
-    GtkCellRenderer *renderer;
-    GtkTreeViewColumn *column;
-
-    if (!current_dir) {
-        if (g_file_test("/mnt/us/roms", G_FILE_TEST_IS_DIR)) {
-            current_dir = g_strdup("/mnt/us/roms");
-        } else if (g_file_test("/mnt/us", G_FILE_TEST_IS_DIR)) {
-            current_dir = g_strdup("/mnt/us");
-        } else {
-            current_dir = g_get_current_dir();
-        }
+static void on_back_clicked(GtkWidget *btn, gpointer user_data) {
+    if (global_on_back_cb) {
+        global_on_back_cb();
     }
+}
 
-    g_free(selected_path);
-    selected_path = NULL;
+GtkWidget *create_rom_picker_view(void (*on_selected)(const char *path), void (*on_back)(void)) {
+    global_on_selected_cb = on_selected;
+    global_on_back_cb = on_back;
 
-    dlg = gtk_dialog_new_with_buttons(
-        "L:A_N:application_ID:filepicker_PC:N",
-        parent,
-        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
-        "  LOAD  ", GTK_RESPONSE_ACCEPT,
-        "  CANCEL  ", GTK_RESPONSE_CANCEL,
-        NULL
-    );
+    GtkWidget *vbox = gtk_vbox_new(FALSE, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(vbox), 16);
 
-    gtk_window_set_default_size(GTK_WINDOW(dlg), 920, 1150);
-    gtk_window_set_position(GTK_WINDOW(dlg), GTK_WIN_POS_CENTER_ALWAYS);
+    /* Header Bar */
+    GtkWidget *header_hbox = gtk_hbox_new(FALSE, 10);
+    GtkWidget *title_lbl = gtk_label_new("SELECT GAME ROM");
+    PangoFontDescription *tfont = pango_font_description_from_string("Sans Bold 20");
+    gtk_widget_modify_font(title_lbl, tfont);
+    pango_font_description_free(tfont);
+    gtk_box_pack_start(GTK_BOX(header_hbox), title_lbl, FALSE, FALSE, 4);
 
-    sw = gtk_scrolled_window_new(NULL, NULL);
+    GtkWidget *back_btn = gtk_button_new_with_label("  < Back to Game  ");
+    PangoFontDescription *bfont = pango_font_description_from_string("Sans Bold 14");
+    gtk_widget_modify_font(back_btn, bfont);
+    pango_font_description_free(bfont);
+    g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_clicked), NULL);
+    gtk_box_pack_end(GTK_BOX(header_hbox), back_btn, FALSE, FALSE, 4);
+
+    gtk_box_pack_start(GTK_BOX(vbox), header_hbox, FALSE, FALSE, 6);
+
+    /* Current Folder Label */
+    global_path_lbl = gtk_label_new("Folder: /mnt/us/roms");
+    PangoFontDescription *pfont = pango_font_description_from_string("Sans 14");
+    gtk_widget_modify_font(global_path_lbl, pfont);
+    pango_font_description_free(pfont);
+    gtk_misc_set_alignment(GTK_MISC(global_path_lbl), 0.0, 0.5);
+    gtk_box_pack_start(GTK_BOX(vbox), global_path_lbl, FALSE, FALSE, 2);
+
+    GtkWidget *sep = gtk_hseparator_new();
+    gtk_box_pack_start(GTK_BOX(vbox), sep, FALSE, FALSE, 4);
+
+    /* Scrolled Window with TreeView */
+    GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_size_request(sw, 880, 1000);
 
-    store = gtk_list_store_new(NUM_COLS, G_TYPE_STRING, G_TYPE_STRING);
-    tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
-    g_object_unref(store);
+    global_rom_store = gtk_list_store_new(NUM_COLS, G_TYPE_STRING, G_TYPE_STRING);
+    GtkWidget *tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(global_rom_store));
+    g_object_unref(global_rom_store);
 
-    renderer = gtk_cell_renderer_text_new();
+    GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
     g_object_set(renderer, "font", "Sans Bold 16", "ypad", 12, NULL);
-    column = gtk_tree_view_column_new_with_attributes("Select Game ROM", renderer, "text", COL_NAME, NULL);
+    GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes("Game Files", renderer, "text", COL_NAME, NULL);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), column);
 
+    g_signal_connect(tree, "button-release-event", G_CALLBACK(on_tree_button_release), NULL);
+    g_signal_connect(tree, "row-activated", G_CALLBACK(on_tree_row_activated), NULL);
+
     gtk_container_add(GTK_CONTAINER(sw), tree);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dlg))), sw, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), sw, TRUE, TRUE, 4);
 
-    update_tree_view(store);
+    update_tree_view(global_rom_store);
 
-    /* Connect button-release and row-activated for reliable user tap detection */
-    g_signal_connect(tree, "button-release-event", G_CALLBACK(on_tree_button_release), dlg);
-    g_signal_connect(tree, "row-activated", G_CALLBACK(on_tree_row_activated), dlg);
-
-    gtk_widget_show_all(dlg);
-
-    gint resp = gtk_dialog_run(GTK_DIALOG(dlg));
-
-    if (resp == GTK_RESPONSE_ACCEPT) {
-        if (!selected_path) {
-            GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
-            GtkTreeModel *model;
-            GtkTreeIter iter;
-            if (gtk_tree_selection_get_selected(sel, &model, &iter)) {
-                gchar *path = NULL;
-                gtk_tree_model_get(model, &iter, COL_PATH, &path, -1);
-                if (path) {
-                    struct stat st;
-                    if (stat(path, &st) == 0 && !S_ISDIR(st.st_mode)) {
-                        selected_path = path;
-                    } else {
-                        g_free(path);
-                    }
-                }
-            }
-        }
-    } else {
-        g_free(selected_path);
-        selected_path = NULL;
-    }
-
-    gtk_widget_destroy(dlg);
-    while (gtk_events_pending()) {
-        gtk_main_iteration();
-    }
-    return selected_path;
+    return vbox;
 }

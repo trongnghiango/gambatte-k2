@@ -2,5 +2,8 @@
 #define FILE_PICKER_H
 
 #include <gtk/gtk.h>
-char * simple_file_chooser_list (GtkWindow *parent);
+
+GtkWidget *create_rom_picker_view(void (*on_selected)(const char *path), void (*on_back)(void));
+void refresh_rom_picker_view(void);
+
 #endif
