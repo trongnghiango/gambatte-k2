@@ -13,7 +13,7 @@
                         <property name="spacing">10</property>
                         <child>
                             <object class="GtkButton" id="hamburger_btn">
-                                <property name="label">  ☰  </property>
+                                <property name="label">  MENU  </property>
                                 <property name="relief">GTK_RELIEF_NONE</property>
                                 <property name="focus_on_click">False</property>
                                 <signal name="clicked" handler="on_hamburger_click" />

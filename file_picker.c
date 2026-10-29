@@ -27,7 +27,7 @@ static void update_tree_view(GtkListStore *store) {
     GtkTreeIter iter;
     gtk_list_store_append(store, &iter);
     gchar *parent_path = g_strdup_printf("%s/..", current_dir);
-    gtk_list_store_set(store, &iter, COL_NAME, "📁  [..] (Go Up)", COL_PATH, parent_path, -1);
+    gtk_list_store_set(store, &iter, COL_NAME, "[..] (Go Up)", COL_PATH, parent_path, -1);
     g_free(parent_path);
 
     /* 2. Read directory entries */
@@ -65,7 +65,7 @@ static void update_tree_view(GtkListStore *store) {
     for (GList *l = dir_list; l != NULL; l = l->next) {
         name = (const gchar*)l->data;
         snprintf(full, sizeof(full), "%s/%s", current_dir, name);
-        gchar *disp_name = g_strdup_printf("📁  [%s]", name);
+        gchar *disp_name = g_strdup_printf("[DIR]  %s", name);
 
         gtk_list_store_append(store, &iter);
         gtk_list_store_set(store, &iter, COL_NAME, disp_name, COL_PATH, full, -1);
@@ -79,7 +79,7 @@ static void update_tree_view(GtkListStore *store) {
     for (GList *l = rom_list; l != NULL; l = l->next) {
         name = (const gchar*)l->data;
         snprintf(full, sizeof(full), "%s/%s", current_dir, name);
-        gchar *disp_name = g_strdup_printf("🎮  %s", name);
+        gchar *disp_name = g_strdup(name);
 
         gtk_list_store_append(store, &iter);
         gtk_list_store_set(store, &iter, COL_NAME, disp_name, COL_PATH, full, -1);

@@ -159,7 +159,7 @@ static GtkWidget *popup_menu = NULL;
 static volatile gint drawing_area_abs_x = 0, drawing_area_abs_y = 0;
 static volatile gint joystick_area_abs_x = 0, joystick_area_abs_y = 0;
 static int PIXBUF_WIDTH = 0, PIXBUF_HEIGHT = 0;
-static int SCALE_FACTOR_A = 6;
+static int SCALE_FACTOR_A = 5;
 static int SCREEN_BORDER = 5;
 
 // Framebuffer/FBInk
@@ -228,7 +228,8 @@ typedef enum { DRAW_MODE_GTK, DRAW_MODE_FBINK } DrawMode;
 static DrawMode draw_mode = DRAW_MODE_GTK;
 
 typedef enum { STYLE_MODE_DARK, STYLE_MODE_LIGHT } StyleMode;
-static StyleMode style_mode = STYLE_MODE_DARK;
+static StyleMode style_mode = STYLE_MODE_LIGHT;
+static int speed_multiplier = 1;
 static volatile gint refresh_screen = 0;
 ////// JOYSTICK
 typedef enum { GB_BUTTON_ARC, GB_BUTTON_RECT } GbButtonGeometry;
@@ -495,12 +496,12 @@ static void on_area_configure_event(GtkWidget *widget, GdkEvent *event, gpointer
         int w = allocation.width;
         int h = allocation.height;
 
-        double dpad_cx = w * 0.224;
-        double dpad_cy = h * 0.45;
-        double dpad_petal_h = h * 0.222;
-        double dpad_gap = w * 0.019;
+        double dpad_cx = w * 0.26;
+        double dpad_cy = h * 0.44;
+        double dpad_petal_h = h * 0.250;
+        double dpad_gap = w * 0.024;
         double dpad_dist = dpad_gap + dpad_petal_h * 0.55;
-        int dpad_hitbox_r = (int)(dpad_petal_h * 0.70);
+        int dpad_hitbox_r = (int)(dpad_petal_h * 0.75);
 
         // UP
         g_atomic_int_set(&gb_button_regions[GB_UP].x, (int)dpad_cx);
@@ -523,24 +524,24 @@ static void on_area_configure_event(GtkWidget *widget, GdkEvent *event, gpointer
         g_atomic_int_set(&gb_button_regions[GB_RIGHT].r, dpad_hitbox_r);
 
         // B
-        g_atomic_int_set(&gb_button_regions[GB_B].x, (int)(w * 0.71));
-        g_atomic_int_set(&gb_button_regions[GB_B].y, (int)(h * 0.53));
-        g_atomic_int_set(&gb_button_regions[GB_B].r, (int)(w * 0.068));
+        g_atomic_int_set(&gb_button_regions[GB_B].x, (int)(w * 0.69));
+        g_atomic_int_set(&gb_button_regions[GB_B].y, (int)(h * 0.54));
+        g_atomic_int_set(&gb_button_regions[GB_B].r, (int)(w * 0.088));
 
         // A
         g_atomic_int_set(&gb_button_regions[GB_A].x, (int)(w * 0.86));
-        g_atomic_int_set(&gb_button_regions[GB_A].y, (int)(h * 0.31));
-        g_atomic_int_set(&gb_button_regions[GB_A].r, (int)(w * 0.068));
+        g_atomic_int_set(&gb_button_regions[GB_A].y, (int)(h * 0.30));
+        g_atomic_int_set(&gb_button_regions[GB_A].r, (int)(w * 0.088));
 
         // SELECT
-        g_atomic_int_set(&gb_button_regions[GB_SELECT].x, (int)(w * 0.43));
-        g_atomic_int_set(&gb_button_regions[GB_SELECT].y, (int)(h * 0.86));
-        g_atomic_int_set(&gb_button_regions[GB_SELECT].r, 58);
+        g_atomic_int_set(&gb_button_regions[GB_SELECT].x, (int)(w * 0.42));
+        g_atomic_int_set(&gb_button_regions[GB_SELECT].y, (int)(h * 0.85));
+        g_atomic_int_set(&gb_button_regions[GB_SELECT].r, 75);
 
         // START
-        g_atomic_int_set(&gb_button_regions[GB_START].x, (int)(w * 0.57));
-        g_atomic_int_set(&gb_button_regions[GB_START].y, (int)(h * 0.86));
-        g_atomic_int_set(&gb_button_regions[GB_START].r, 58);
+        g_atomic_int_set(&gb_button_regions[GB_START].x, (int)(w * 0.58));
+        g_atomic_int_set(&gb_button_regions[GB_START].y, (int)(h * 0.85));
+        g_atomic_int_set(&gb_button_regions[GB_START].r, 75);
 
         fprintf(stdout, "joystick_area abs pos: %4d %4d (w:%4d h:%4d)\n", abs_x, abs_y, w, h);
     }
@@ -736,36 +737,36 @@ static gboolean gb_controls_draw(GtkWidget *widget, GdkEventExpose *event, gpoin
     cairo_line_to(cr, width, 0);
     cairo_stroke(cr);
 
-    // Prominent, generous D-Pad
-    double dpad_cx = width * 0.224;
-    double dpad_cy = height * 0.45;
-    double petal_w = width * 0.086;
-    double petal_h = height * 0.222;
-    double center_gap = width * 0.019;
-    double r_corner = 18.0;
+    // Giant D-Pad (over 400px diameter)
+    double dpad_cx = width * 0.26;
+    double dpad_cy = height * 0.44;
+    double petal_w = width * 0.128;
+    double petal_h = height * 0.250;
+    double center_gap = width * 0.024;
+    double r_corner = 24.0;
 
     draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, 0, gb_button_state[GB_UP], style_mode);
     draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, M_PI / 2.0, gb_button_state[GB_RIGHT], style_mode);
     draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, M_PI, gb_button_state[GB_DOWN], style_mode);
     draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, 3.0 * M_PI / 2.0, gb_button_state[GB_LEFT], style_mode);
 
-    // Action Buttons A and B (Big and comfortable)
-    double btn_b_x = width * 0.71;
-    double btn_b_y = height * 0.53;
+    // Giant Action Buttons A and B (Diameter ~160px)
+    double btn_b_x = width * 0.69;
+    double btn_b_y = height * 0.54;
     double btn_a_x = width * 0.86;
-    double btn_a_y = height * 0.31;
-    double btn_r = width * 0.050;
+    double btn_a_y = height * 0.30;
+    double btn_r = width * 0.074;
 
     draw_action_button(cr, btn_b_x, btn_b_y, btn_r, "B", gb_button_state[GB_B], style_mode);
     draw_action_button(cr, btn_a_x, btn_a_y, btn_r, "A", gb_button_state[GB_A], style_mode);
 
-    // Capsule Buttons SELECT and START
-    double sel_x = width * 0.43;
-    double sel_y = height * 0.86;
-    double sta_x = width * 0.57;
-    double sta_y = height * 0.86;
-    double cap_w = 104.0;
-    double cap_h = 36.0;
+    // Giant Capsule Buttons SELECT and START (140 x 48 px)
+    double sel_x = width * 0.42;
+    double sel_y = height * 0.85;
+    double sta_x = width * 0.58;
+    double sta_y = height * 0.85;
+    double cap_w = 140.0;
+    double cap_h = 48.0;
 
     draw_capsule_button(cr, sel_x, sel_y, cap_w, cap_h, "SELECT", gb_button_state[GB_SELECT], style_mode);
     draw_capsule_button(cr, sta_x, sta_y, cap_w, cap_h, "START", gb_button_state[GB_START], style_mode);
@@ -953,11 +954,11 @@ static gpointer emulator_thread_fn(gpointer data) {
         pthread_mutex_unlock(&game_loop_mutex);
 
         int64_t elapsed = g_get_monotonic_time() - start;
+        int mult = (speed_multiplier > 0) ? speed_multiplier : 1;
+        int target_interval = frame_interval_us / mult;
 
-        if (elapsed < frame_interval_us) {                  
-            g_usleep(frame_interval_us - elapsed);
-        } else {
-            g_print("warning negative elapsed: %f\n", (double) (elapsed) / 1000.0);
+        if (elapsed < target_interval) {                  
+            g_usleep(target_interval - elapsed);
         }
 
         // if ( ((double) (elapsed) / 1000.0) > 4 ){
@@ -1264,36 +1265,52 @@ static void on_toggle_theme_click(GtkMenuItem *item, gpointer user_data) {
     apply_theme();
 }
 
+static GtkWidget *item_speed = NULL;
+
+static void on_toggle_speed_click(GtkMenuItem *item, gpointer user_data) {
+    if (speed_multiplier == 1) {
+        speed_multiplier = 2;
+        if (item_speed) gtk_menu_item_set_label(GTK_MENU_ITEM(item_speed), "Speed: 2x [FAST]");
+    } else {
+        speed_multiplier = 1;
+        if (item_speed) gtk_menu_item_set_label(GTK_MENU_ITEM(item_speed), "Speed: 1x [NORMAL]");
+    }
+}
+
 static void create_popup_menu(GtkWidget *win) {
     popup_menu = gtk_menu_new();
 
-    GtkWidget *item_open = gtk_menu_item_new_with_label("📂  Open ROM...");
+    GtkWidget *item_open = gtk_menu_item_new_with_label("Open ROM...");
     g_signal_connect(item_open, "activate", G_CALLBACK(on_open), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_open);
 
-    GtkWidget *item_save = gtk_menu_item_new_with_label("💾  Save State");
+    GtkWidget *item_save = gtk_menu_item_new_with_label("Save State");
     g_signal_connect(item_save, "activate", G_CALLBACK(on_save_state_click), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_save);
 
-    GtkWidget *item_load = gtk_menu_item_new_with_label("📥  Load State");
+    GtkWidget *item_load = gtk_menu_item_new_with_label("Load State");
     g_signal_connect(item_load, "activate", G_CALLBACK(on_load_state_click), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_load);
 
     GtkWidget *sep1 = gtk_separator_menu_item_new();
     gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), sep1);
 
-    GtkWidget *item_theme = gtk_menu_item_new_with_label("🌓  Toggle Light / Dark");
+    item_speed = gtk_menu_item_new_with_label("Speed: 1x [NORMAL]");
+    g_signal_connect(item_speed, "activate", G_CALLBACK(on_toggle_speed_click), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_speed);
+
+    GtkWidget *item_theme = gtk_menu_item_new_with_label("Theme: Light / Dark");
     g_signal_connect(item_theme, "activate", G_CALLBACK(on_toggle_theme_click), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_theme);
 
-    GtkWidget *item_refresh = gtk_menu_item_new_with_label("🔄  Refresh Screen");
+    GtkWidget *item_refresh = gtk_menu_item_new_with_label("Refresh Screen");
     g_signal_connect(item_refresh, "activate", G_CALLBACK(on_refresh), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_refresh);
 
     GtkWidget *sep2 = gtk_separator_menu_item_new();
     gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), sep2);
 
-    GtkWidget *item_quit = gtk_menu_item_new_with_label("❌  Quit");
+    GtkWidget *item_quit = gtk_menu_item_new_with_label("Quit");
     g_signal_connect(item_quit, "activate", G_CALLBACK(on_quit), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_quit);
 
@@ -1395,7 +1412,7 @@ static void init_gtk_and_window() {
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
 
     if (screen_width >= 1000) {
-        SCALE_FACTOR_A = 6; /* Kindle Paperwhite 3 / Voyage / Oasis (1072x1448 -> 960x864) */
+        SCALE_FACTOR_A = 5; /* Kindle Paperwhite 3 / Voyage / Oasis (1072x1448 -> 800x720, leaves 680px for giant buttons) */
     } else if (screen_width >= 700) {
         SCALE_FACTOR_A = 4; /* Kindle Paperwhite 2 (758x1024 -> 640x576) */
     } else {
