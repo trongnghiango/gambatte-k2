@@ -92,35 +92,60 @@ static void update_tree_view(GtkListStore *store) {
     is_updating = FALSE;
 }
 
-static void on_tree_cursor_changed(GtkTreeView *tree_view, gpointer user_data) {
-    if (is_updating) return;
+static gboolean on_tree_button_release(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
+    if (event->type != GDK_BUTTON_RELEASE || event->button != 1) return FALSE;
+    GtkTreeView *tree_view = GTK_TREE_VIEW(widget);
+    GtkTreePath *path = NULL;
+    GtkTreeViewColumn *col = NULL;
 
-    GtkDialog *dlg = GTK_DIALOG(user_data);
-    GtkTreeSelection *sel = gtk_tree_view_get_selection(tree_view);
-    GtkTreeModel *model;
+    if (gtk_tree_view_get_path_at_pos(tree_view, (gint)event->x, (gint)event->y, &path, &col, NULL, NULL)) {
+        GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+        GtkTreeIter iter;
+        if (gtk_tree_model_get_iter(model, &iter, path)) {
+            gchar *filepath = NULL;
+            gtk_tree_model_get(model, &iter, COL_PATH, &filepath, -1);
+            if (filepath) {
+                struct stat st;
+                if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
+                    g_free(current_dir);
+                    current_dir = g_strdup(filepath);
+                    update_tree_view(GTK_LIST_STORE(model));
+                } else {
+                    g_free(selected_path);
+                    selected_path = g_strdup(filepath);
+                    GtkDialog *dlg = GTK_DIALOG(user_data);
+                    gtk_dialog_response(dlg, GTK_RESPONSE_ACCEPT);
+                }
+                g_free(filepath);
+            }
+        }
+        gtk_tree_path_free(path);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void on_tree_row_activated(GtkTreeView *tree_view, GtkTreePath *path, GtkTreeViewColumn *column, gpointer user_data) {
+    GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
     GtkTreeIter iter;
-
-    if (!gtk_tree_selection_get_selected(sel, &model, &iter)) {
-        return;
+    if (gtk_tree_model_get_iter(model, &iter, path)) {
+        gchar *filepath = NULL;
+        gtk_tree_model_get(model, &iter, COL_PATH, &filepath, -1);
+        if (filepath) {
+            struct stat st;
+            if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
+                g_free(current_dir);
+                current_dir = g_strdup(filepath);
+                update_tree_view(GTK_LIST_STORE(model));
+            } else {
+                g_free(selected_path);
+                selected_path = g_strdup(filepath);
+                GtkDialog *dlg = GTK_DIALOG(user_data);
+                gtk_dialog_response(dlg, GTK_RESPONSE_ACCEPT);
+            }
+            g_free(filepath);
+        }
     }
-
-    gchar *path = NULL;
-    gtk_tree_model_get(model, &iter, COL_PATH, &path, -1);
-    if (!path) return;
-
-    struct stat st;
-    if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
-        g_free(current_dir);
-        current_dir = g_strdup(path);
-        update_tree_view(GTK_LIST_STORE(model));
-        g_free(path);
-        return;
-    }
-
-    /* Single click on a ROM file selects and triggers immediate load */
-    g_free(selected_path);
-    selected_path = path; /* takes ownership */
-    gtk_dialog_response(dlg, GTK_RESPONSE_ACCEPT);
 }
 
 char *simple_file_chooser_list(GtkWindow *parent) {
@@ -172,8 +197,9 @@ char *simple_file_chooser_list(GtkWindow *parent) {
 
     update_tree_view(store);
 
-    /* Connect single-tap on row to immediately open folder or load ROM */
-    g_signal_connect(tree, "cursor-changed", G_CALLBACK(on_tree_cursor_changed), dlg);
+    /* Connect button-release and row-activated for reliable user tap detection */
+    g_signal_connect(tree, "button-release-event", G_CALLBACK(on_tree_button_release), dlg);
+    g_signal_connect(tree, "row-activated", G_CALLBACK(on_tree_row_activated), dlg);
 
     gtk_widget_show_all(dlg);
 

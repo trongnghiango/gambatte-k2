@@ -791,7 +791,6 @@ static void audio_backend_deinit(AudioBackend **pab) {
     if (!pab || !*pab) return;
     AudioBackend *ab = *pab;
     if (ab->mixer_handle) {
-        if (MixerWaitTillAudioProcessed) MixerWaitTillAudioProcessed(ab->mixer_handle);
         if (MixerDrain) MixerDrain(ab->mixer_handle);
         if (MixerClose) MixerClose(ab->mixer_handle);
         ab->mixer_handle = NULL;
@@ -823,10 +822,12 @@ static gpointer process_frame_job(gpointer user_data) {
     int emulator_frame_height    = job->height;
     int emulator_frame_rowstride = job->pitch / sizeof(uint16_t);
 
-    ensure_pixbuf(emulator_frame_width, emulator_frame_height);
-    if (!pixbuf) return NULL;
-
     pthread_mutex_lock(&pixbuf_mutex);
+    ensure_pixbuf(emulator_frame_width, emulator_frame_height);
+    if (!pixbuf) {
+        pthread_mutex_unlock(&pixbuf_mutex);
+        return NULL;
+    }
     guchar *dst = gdk_pixbuf_get_pixels(pixbuf);
     int dst_rowstride = gdk_pixbuf_get_rowstride(pixbuf);
     int nchan = gdk_pixbuf_get_n_channels(pixbuf);
@@ -1582,10 +1583,8 @@ int main(int argc, char *argv[]) {
     pthread_create(&touch_tid, NULL, (void*(*)(void*))touch_thread_fn, NULL);
     fprintf(stderr, "[STARTUP] 6. Background threads created\n"); fflush(stderr);
 
-    gdk_threads_enter();
     fprintf(stderr, "[STARTUP] 7. Entering gtk_main\n"); fflush(stderr);
     gtk_main();
-    gdk_threads_leave();
     fprintf(stderr, "[STARTUP] 8. Exiting cleanly\n"); fflush(stderr);
 
     audio_backend_deinit(&ab);

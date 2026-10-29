@@ -35,8 +35,8 @@ echo "EXTDIR=$EXTDIR" >> "$LOGFILE"
 echo "DISPLAY=$DISPLAY" >> "$LOGFILE"
 echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$LOGFILE"
 
-# Clear e-ink screen before launching to remove KUAL ghosting
-which eips >/dev/null 2>&1 && eips -c 2>/dev/null || true
+# Refresh e-ink screen before launching
+which eips >/dev/null 2>&1 && eips -f 2>/dev/null || true
 
 # Run gambatte-k2
 if [ -f "$EXTDIR/bin/gambatte-k2" ]; then
@@ -58,6 +58,6 @@ if [ "$RET" -ne 0 ]; then
     sleep 3
 fi
 
-# Clean up: clear screen and restore screensaver when exiting
-which eips >/dev/null 2>&1 && eips -c 2>/dev/null || true
+# Restore screensaver and trigger full e-ink refresh so Kindle UI repaints cleanly
 lipc-set-prop -i com.lab126.powerd preventScreenSaver 0 2>/dev/null || true
+which eips >/dev/null 2>&1 && eips -f 2>/dev/null || true
