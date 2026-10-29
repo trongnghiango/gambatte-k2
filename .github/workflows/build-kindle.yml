@@ -111,8 +111,8 @@ jobs:
           git clone --depth=1 https://github.com/libretro/gambatte-libretro.git /tmp/gambatte-libretro
           cd /tmp/gambatte-libretro
 
-          make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" CFLAGS="-O3" CXXFLAGS="-O3" LDFLAGS="-static-libgcc -static-libstdc++" || \
-            make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" CFLAGS="-O3" CXXFLAGS="-O3" LDFLAGS="-static-libgcc -static-libstdc++"
+          make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" LDFLAGS="-static-libgcc -static-libstdc++" || \
+            make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" LDFLAGS="-static-libgcc -static-libstdc++"
 
           if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
             "$KINDLE_STRIP" gambatte_libretro.so || true
