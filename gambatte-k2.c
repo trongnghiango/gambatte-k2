@@ -1613,8 +1613,7 @@ static void init_gtk_and_window() {
         return;
     }
 
-    gtk_builder_connect_signals(builder, NULL);
-
+    /* All signals connected explicitly below - no builder duplicate connections */
     main_notebook  = GTK_WIDGET(gtk_builder_get_object(builder, "main_notebook"));
     window         = GTK_WIDGET(gtk_builder_get_object(builder, "main_window"));
     drawing_area   = GTK_WIDGET(gtk_builder_get_object(builder, "drawing_area"));

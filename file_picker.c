@@ -111,7 +111,12 @@ void refresh_rom_picker_view(void) {
     }
 }
 
+static gboolean is_busy_loading = FALSE;
+
 static void on_rom_row_chosen(const char *filepath) {
+    if (is_busy_loading) return;
+    is_busy_loading = TRUE;
+
     struct stat st;
     if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
         g_free(current_dir);
@@ -119,10 +124,12 @@ static void on_rom_row_chosen(const char *filepath) {
         if (global_rom_store) {
             update_tree_view(global_rom_store);
         }
+        is_busy_loading = FALSE;
     } else {
         if (global_on_selected_cb) {
             global_on_selected_cb(filepath);
         }
+        is_busy_loading = FALSE;
     }
 }
 
@@ -147,19 +154,6 @@ static gboolean on_tree_button_release(GtkWidget *widget, GdkEventButton *event,
         return TRUE;
     }
     return FALSE;
-}
-
-static void on_tree_row_activated(GtkTreeView *tree_view, GtkTreePath *path, GtkTreeViewColumn *column, gpointer user_data) {
-    GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
-    GtkTreeIter iter;
-    if (gtk_tree_model_get_iter(model, &iter, path)) {
-        gchar *filepath = NULL;
-        gtk_tree_model_get(model, &iter, COL_PATH, &filepath, -1);
-        if (filepath) {
-            on_rom_row_chosen(filepath);
-            g_free(filepath);
-        }
-    }
 }
 
 static void on_back_clicked(GtkWidget *btn, gpointer user_data) {
@@ -216,8 +210,8 @@ GtkWidget *create_rom_picker_view(void (*on_selected)(const char *path), void (*
     GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes("Game Files", renderer, "text", COL_NAME, NULL);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), column);
 
+    /* Connect only single-tap button-release-event to eliminate double activation */
     g_signal_connect(tree, "button-release-event", G_CALLBACK(on_tree_button_release), NULL);
-    g_signal_connect(tree, "row-activated", G_CALLBACK(on_tree_row_activated), NULL);
 
     gtk_container_add(GTK_CONTAINER(sw), tree);
     gtk_box_pack_start(GTK_BOX(vbox), sw, TRUE, TRUE, 4);
