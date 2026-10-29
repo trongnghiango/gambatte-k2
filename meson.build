@@ -52,7 +52,7 @@ executable(
   include_directories: [include_directories('.'), include_directories('include')],
   dependencies: deps,
   c_args: c_args,
-  link_args: ['-ldl', '-lm'],
+  link_args: ['-lgthread-2.0', '-ldl', '-lm'],
   export_dynamic: true,
   install: true
 )

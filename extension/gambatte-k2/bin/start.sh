@@ -31,6 +31,9 @@ if [ -f "$LOGFILE" ]; then
 fi
 
 echo "=== [$(date)] Starting Gambatte-K2 ===" >> "$LOGFILE"
+echo "EXTDIR=$EXTDIR" >> "$LOGFILE"
+echo "DISPLAY=$DISPLAY" >> "$LOGFILE"
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$LOGFILE"
 
 # Clear e-ink screen before launching to remove KUAL ghosting
 which eips >/dev/null 2>&1 && eips -c 2>/dev/null || true

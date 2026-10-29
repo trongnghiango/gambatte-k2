@@ -152,9 +152,10 @@ static int PIXBUF_WIDTH = 0, PIXBUF_HEIGHT = 0;
 int fbfd = FBFD_AUTO, fbfd_refresh = FBFD_AUTO;
 FBInkConfig fbink_cfg = {0}, fbink_cfg_refresh = {0};
 
-// Mutexes
-GMutex *pixbuf_mutex = NULL, *slots_mutex = NULL, *game_loop_mutex = NULL;
-static GAsyncQueue *frame_queue;
+// POSIX Mutexes (100% resilient across all Linux & GLib versions)
+static pthread_mutex_t pixbuf_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t slots_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t game_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Audio
 typedef struct AudioBackend {
@@ -185,13 +186,17 @@ static void ensure_pixbuf(int width, int height) {
 
 static gboolean expose_event(GtkWidget *widget, GdkEventExpose *event, gpointer data) {
     if (!pixbuf) return FALSE;
-    g_mutex_lock(pixbuf_mutex);
+    pthread_mutex_lock(&pixbuf_mutex);
     GdkWindow *win = gtk_widget_get_window(widget);
-    cairo_t *cr = gdk_cairo_create(win);
-    gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
-    cairo_paint(cr);
-    cairo_destroy(cr);
-    g_mutex_unlock(pixbuf_mutex);
+    if (win) {
+        cairo_t *cr = gdk_cairo_create(win);
+        if (cr) {
+            gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
+            cairo_paint(cr);
+            cairo_destroy(cr);
+        }
+    }
+    pthread_mutex_unlock(&pixbuf_mutex);
     return FALSE;
 }
 
@@ -279,18 +284,7 @@ static uint8_t bayer16[16][16] = {
     {170, 234, 186, 250, 174, 238, 190, 254, 171, 235, 187, 251, 175, 239, 191, 255 }
 };
 
-#ifdef __ARM_NEON
-// 2) Pre‑load 16 NEON threshold vectors—run once at init
-static uint8x16_t t_vecs[16];
-#endif
-
-void init_bayer16_thresholds(void) {
-#ifdef __ARM_NEON
-    for (int r = 0; r < 16; r++) {
-        t_vecs[r] = vld1q_u8(bayer16[r]);
-    }
-#endif
-}
+/* Bayer 16x16 threshold table defined above */
 
 void init_grayscale_lut(float contrast, float brightness) {
     for (uint32_t i = 0; i < 65536; i++) {
@@ -370,14 +364,28 @@ static gpointer touch_thread_fn(gpointer data) {
                 }
             }
             else if (ev.type == EV_SYN && (ev.code == SYN_REPORT || ev.code == SYN_MT_REPORT)) {
-                g_mutex_lock(slots_mutex);
+                pthread_mutex_lock(&slots_mutex);
                 memcpy(slots_snap, slots, sizeof(slots));
-                g_mutex_unlock(slots_mutex);
+                pthread_mutex_unlock(&slots_mutex);
             }
         }
     }
     close(fd);
     return NULL;
+}
+
+static gboolean trigger_drawing_redraw(gpointer data) {
+    if (drawing_area && gtk_widget_get_realized(drawing_area)) {
+        gtk_widget_queue_draw(drawing_area);
+    }
+    return FALSE;
+}
+
+static gboolean trigger_joystick_redraw(gpointer data) {
+    if (joystick_area && gtk_widget_get_realized(joystick_area)) {
+        gtk_widget_queue_draw(joystick_area);
+    }
+    return FALSE;
 }
 
 // input callbacks | gambatte thread
@@ -390,9 +398,9 @@ static void input_poll(void){
     // Snapshot touch slots
     TouchSlot slots[MAX_TOUCHES];
 
-    g_mutex_lock(slots_mutex);
+    pthread_mutex_lock(&slots_mutex);
     memcpy(slots, slots_snap, sizeof(slots));
-    g_mutex_unlock(slots_mutex);
+    pthread_mutex_unlock(&slots_mutex);
 
     // For each active touch, set the corresponding button
     for (int s = 0; s < MAX_TOUCHES; ++s) {
@@ -424,8 +432,8 @@ static void input_poll(void){
             state_changed = TRUE;
         }
     }
-    if (state_changed && joystick_area) {
-        gtk_widget_queue_draw(joystick_area);
+    if (state_changed) {
+        g_idle_add(trigger_joystick_redraw, NULL);
     }
 }
 
@@ -687,7 +695,9 @@ static gboolean gb_controls_draw(GtkWidget *widget, GdkEventExpose *event, gpoin
     int height = alloc.height;
 
     GdkWindow *win = gtk_widget_get_window(widget);
+    if (!win) return FALSE;
     cairo_t *cr = gdk_cairo_create(win);
+    if (!cr) return FALSE;
 
     if (style_mode == STYLE_MODE_LIGHT) {
         cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
@@ -799,7 +809,7 @@ static gpointer process_frame_job(gpointer user_data) {
     ensure_pixbuf(scaled_frame_width, scaled_frame_height);
     if (!pixbuf) return NULL;
 
-    g_mutex_lock(pixbuf_mutex);
+    pthread_mutex_lock(&pixbuf_mutex);
     guchar *dst = gdk_pixbuf_get_pixels(pixbuf);
     int dst_rowstride = gdk_pixbuf_get_rowstride(pixbuf);
     int nchan = gdk_pixbuf_get_n_channels(pixbuf);
@@ -821,11 +831,9 @@ static gpointer process_frame_job(gpointer user_data) {
             }
         }
     }
-    g_mutex_unlock(pixbuf_mutex);
+    pthread_mutex_unlock(&pixbuf_mutex);
 
-    if (drawing_area) {
-        gtk_widget_queue_draw(drawing_area);
-    }
+    g_idle_add(trigger_drawing_redraw, NULL);
 
     return NULL;
 }
@@ -842,64 +850,18 @@ static gboolean should_process_frame(void) {
     return FALSE;
 }
 
-// frame thread
-static gpointer frame_thread_loop(gpointer data){
-
-    struct sched_param param;
-    param.sched_priority = 70;
-
-    if (pthread_setschedparam(pthread_self(), SCHED_RR, &param) != 0) {
-        perror("pthread_setschedparam for frame_thread_loop");
-    }
-
-    while (running) { 
-        FrameJob *job = g_async_queue_pop(frame_queue);
-        // check sentinel here
-        if (job) {
-            if (should_process_frame()) {
-                process_frame_job(job);
-            }
-            free(job->data);
-            free(job);
-        }
-    }
-   
-    return NULL;
-}
-
 // emulator thread
 static void video_refresh(const void *data, unsigned width, unsigned height, size_t pitch) {
     if (!data) return;
 
-    FrameJob *job = malloc(sizeof(FrameJob));
-
-    job->width  = width;
-    job->height = height;
-    job->pitch  = pitch;
-
-    if (draw_mode == DRAW_MODE_GTK) {
-        if (should_process_frame()){
-            job->data = data;
-            process_frame_job(job);
-            free(job);
-        }
-        return;
+    if (should_process_frame()) {
+        FrameJob job;
+        job.width  = width;
+        job.height = height;
+        job.pitch  = pitch;
+        job.data   = (uint16_t*)data;
+        process_frame_job(&job);
     }
-
-    uint16_t *frame_copy = malloc(height * pitch);
-    memcpy(frame_copy, data, height * pitch);
-    job->data = frame_copy;
-
-    // queue frame precessing and exit asap to prevent core slow down
-    // drop any old frame waiting in the queue and push the newest frame atomically
-    g_async_queue_lock(frame_queue);
-    FrameJob *old = g_async_queue_try_pop_unlocked(frame_queue);
-    if (old) {
-        free(old->data); free(old);
-    }
-    g_async_queue_push_unlocked(frame_queue, job);
-    g_async_queue_unlock(frame_queue);
-
 }
 
 static bool environment_cb(unsigned cmd, void *data) {
@@ -971,11 +933,11 @@ static gpointer emulator_thread_fn(gpointer data) {
 
         int64_t start = g_get_monotonic_time();
 
-        g_mutex_lock(game_loop_mutex);
+        pthread_mutex_lock(&game_loop_mutex);
         if (ready) {
             retro_run(); // will trigger video_refresh via callback
         }
-        g_mutex_unlock(game_loop_mutex);
+        pthread_mutex_unlock(&game_loop_mutex);
 
         int64_t elapsed = g_get_monotonic_time() - start;
 
@@ -997,7 +959,7 @@ static gpointer emulator_thread_fn(gpointer data) {
 void on_open(GtkButton *button, gpointer user_data) {
         fprintf(stderr, "on_open\n");
 
-        g_mutex_lock(game_loop_mutex);
+        pthread_mutex_lock(&game_loop_mutex);
         
         ready = FALSE; // use mutexes color?
 
@@ -1008,7 +970,7 @@ void on_open(GtkButton *button, gpointer user_data) {
 
             if (!load_core()) {
                 g_print("Failed to load libretro core\n");
-                g_mutex_unlock(game_loop_mutex);
+                pthread_mutex_unlock(&game_loop_mutex);
                 g_free(game_path);
                 return;
             }
@@ -1036,7 +998,7 @@ void on_open(GtkButton *button, gpointer user_data) {
             FILE *game_file = fopen(game_path, "rb");
             if (!game_file) {
                 fprintf(stderr, "Failed to open game file\n");
-                g_mutex_unlock(game_loop_mutex);
+                pthread_mutex_unlock(&game_loop_mutex);
                 return;
             }
             fseek(game_file, 0, SEEK_END);
@@ -1048,7 +1010,7 @@ void on_open(GtkButton *button, gpointer user_data) {
 
             if (!retro_load_game(&game)) {
                 fprintf(stderr, "Failed to load game\n");
-                g_mutex_unlock(game_loop_mutex);
+                pthread_mutex_unlock(&game_loop_mutex);
                 return;
             }
 
@@ -1082,7 +1044,7 @@ void on_open(GtkButton *button, gpointer user_data) {
         } else if (game.data) {
             ready = TRUE;
         }
-        g_mutex_unlock(game_loop_mutex);
+        pthread_mutex_unlock(&game_loop_mutex);
         g_free(game_path);
 }
 
@@ -1191,7 +1153,7 @@ void on_state_mode_click(GtkButton *button, gpointer user_data) {
     
     int action = GPOINTER_TO_INT (user_data);
     
-    g_mutex_lock(game_loop_mutex);
+    pthread_mutex_lock(&game_loop_mutex);
     
     // ready = FALSE; // use mutexes color?
 
@@ -1226,18 +1188,18 @@ void on_state_mode_click(GtkButton *button, gpointer user_data) {
     }
     g_print("on_load option: %d\n", res);
     
-    g_mutex_unlock(game_loop_mutex); // ready = TRUE;
+    pthread_mutex_unlock(&game_loop_mutex); // ready = TRUE;
 }
 
 void on_refresh(GtkButton *button, gpointer user_data) {
-    g_mutex_lock(game_loop_mutex);
-    g_mutex_lock(pixbuf_mutex);
+    pthread_mutex_lock(&game_loop_mutex);
+    pthread_mutex_lock(&pixbuf_mutex);
     fprintf(stdout, "refresh_screen\n");
     if (fbink_refresh) {
         fbink_refresh(fbfd_refresh, drawing_area_abs_y, drawing_area_abs_x, PIXBUF_WIDTH, PIXBUF_HEIGHT, &fbink_cfg_refresh);
     }
-    g_mutex_unlock(game_loop_mutex);
-    g_mutex_unlock(pixbuf_mutex);
+    pthread_mutex_unlock(&game_loop_mutex);
+    pthread_mutex_unlock(&pixbuf_mutex);
     g_atomic_int_set(&refresh_screen, 30);
     if (drawing_area) {
         gtk_widget_queue_draw(drawing_area);
@@ -1409,8 +1371,11 @@ static void init_gtk_and_window() {
     gtk_widget_set_name(joystick_area, "joystick_area");
 
     GdkScreen *screen = gdk_screen_get_default();
-    int screen_width  = gdk_screen_get_width(screen);
-    int screen_height = gdk_screen_get_height(screen);
+    int screen_width  = (screen != NULL) ? gdk_screen_get_width(screen) : 1072;
+    int screen_height = (screen != NULL) ? gdk_screen_get_height(screen) : 1448;
+    if (screen_width <= 0) screen_width = 1072;
+    if (screen_height <= 0) screen_height = 1448;
+
     gtk_window_set_default_size(GTK_WINDOW(window), screen_width, screen_height);
     gtk_window_set_title(GTK_WINDOW(window), "L:A_N:application_ID:gambatte_PC:N_O:URL_DM:PZ");
     gtk_window_fullscreen(GTK_WINDOW(window));
@@ -1437,52 +1402,56 @@ static void init_gtk_and_window() {
     g_object_unref(builder);
 }
 
+static void crash_handler(int sig, siginfo_t *si, void *ucontext) {
+    fprintf(stderr, "\n========================================\n");
+    fprintf(stderr, "FATAL CRASH: Signal %d (%s) at address %p\n",
+            sig, strsignal(sig), si ? si->si_addr : NULL);
+    fprintf(stderr, "========================================\n");
+    fflush(stderr);
+    _exit(128 + sig);
+}
+
+static void setup_crash_handler(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = crash_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGILL, &sa, NULL);
+    sigaction(SIGFPE, &sa, NULL);
+}
+
 // Main function
 int main(int argc, char *argv[]) {
+    setup_crash_handler();
+    fprintf(stderr, "[STARTUP] 1. Crash handler active\n"); fflush(stderr);
 
     init_grayscale_lut(contrast, brightness);
-    init_bayer16_thresholds();
+    fprintf(stderr, "[STARTUP] 2. Grayscale LUT initialized\n"); fflush(stderr);
 
-    if (fbink_init) {
-        fbink_cfg.wfm_mode = WFM_A2;
-        fbink_cfg.dithering_mode = HWD_PASSTHROUGH;
-        fbink_init(fbfd, &fbink_cfg);
-
-        fbink_cfg_refresh.wfm_mode = WFM_AUTO;
-        fbink_cfg_refresh.dithering_mode = HWD_PASSTHROUGH;
-        fbink_cfg_refresh.is_flashing = true;
-        fbink_init(fbfd_refresh, &fbink_cfg_refresh);
-    }
-
-    // threading
-#if !GLIB_CHECK_VERSION(2, 32, 0)
+    /* Initialize GLib and GDK threads unconditionally for Kindle OS compatibility */
     g_thread_init(NULL);
-#endif
     gdk_threads_init();
+    fprintf(stderr, "[STARTUP] 3. GLib/GDK threads initialized\n"); fflush(stderr);
 
-    // mutexes
-    pixbuf_mutex    = g_mutex_new();
-    slots_mutex     = g_mutex_new();
-    game_loop_mutex = g_mutex_new();
-
-    // queues
-    frame_queue     = g_async_queue_new();
-
-    // gtk
     gtk_init(&argc, &argv);
+    fprintf(stderr, "[STARTUP] 4. GTK initialized\n"); fflush(stderr);
 
     init_gtk_and_window();
+    fprintf(stderr, "[STARTUP] 5. UI initialized\n"); fflush(stderr);
 
-    // Start game loop
-    GThread *emulator_thread = g_thread_create(emulator_thread_fn, NULL, FALSE, NULL);
-    GThread *touch_thread    = g_thread_create(touch_thread_fn, NULL, FALSE, NULL);    
-    GThread *frame_thread    = g_thread_create(frame_thread_loop, NULL, FALSE, NULL);    
+    pthread_t emu_tid, touch_tid;
+    pthread_create(&emu_tid, NULL, (void*(*)(void*))emulator_thread_fn, NULL);
+    pthread_create(&touch_tid, NULL, (void*(*)(void*))touch_thread_fn, NULL);
+    fprintf(stderr, "[STARTUP] 6. Background threads created\n"); fflush(stderr);
 
-    gtk_widget_show_all(window);
     gdk_threads_enter();
-
+    fprintf(stderr, "[STARTUP] 7. Entering gtk_main\n"); fflush(stderr);
     gtk_main();
     gdk_threads_leave();
+    fprintf(stderr, "[STARTUP] 8. Exiting cleanly\n"); fflush(stderr);
 
     audio_backend_deinit(&ab);
     
@@ -1494,7 +1463,6 @@ int main(int argc, char *argv[]) {
 
     if (pixbuf) g_object_unref(pixbuf);
     if (grayscale_frame_ptr) free(grayscale_frame_ptr);
-    g_mutex_free(pixbuf_mutex);
     
     return EXIT_SUCCESS;
 }
