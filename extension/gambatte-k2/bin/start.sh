@@ -6,6 +6,12 @@ cd "$EXTDIR" || exit 1
 export GAMBATTE_HOME="$EXTDIR"
 export LD_LIBRARY_PATH="$EXTDIR/lib:$EXTDIR/bin:$LD_LIBRARY_PATH"
 
+# Ensure X11 display is set for GTK on Kindle
+[ -z "$DISPLAY" ] && export DISPLAY=:0
+
+# Kill any lingering instances to prevent input or device lockup
+killall -9 gambatte-k2 2>/dev/null || true
+
 # Prevent screensaver while playing
 lipc-set-prop -i com.lab126.powerd preventScreenSaver 1 2>/dev/null || true
 

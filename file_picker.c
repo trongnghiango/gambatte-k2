@@ -75,8 +75,10 @@ char *simple_file_chooser_list(GtkWindow *parent) {
     if (!current_dir) {
         if (g_file_test("/mnt/us/roms", G_FILE_TEST_IS_DIR)) {
             current_dir = g_strdup("/mnt/us/roms");
-        } else {
+        } else if (g_file_test("/mnt/us", G_FILE_TEST_IS_DIR)) {
             current_dir = g_strdup("/mnt/us");
+        } else {
+            current_dir = g_get_current_dir();
         }
     }
 
