@@ -66,7 +66,12 @@ executable(
   include_directories: [include_directories('.'), include_directories('include')],
   dependencies: deps,
   c_args: c_args,
-  link_args: ['-lstdc++'],
+  link_args: [
+    '-L' + meson.current_source_dir() / 'cores',
+    '-L' + meson.current_source_dir(),
+    '-lgambatte_libretro',
+    '-lstdc++'
+  ],
   export_dynamic: true,
   install: true
 )

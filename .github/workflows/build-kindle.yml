@@ -163,10 +163,11 @@ jobs:
       - name: Dump build debug logs on failure
         if: failure()
         run: |
-          echo "=== NINJA LOG ==="
-          cat /tmp/ninja.log || true
-          echo "=== MESON LOG ==="
-          cat builddir_kindlehf/meson-logs/meson-log.txt || true
+          echo "### Build Error Log" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/ninja.log >> "$GITHUB_STEP_SUMMARY" || true
+          cat builddir_kindlehf/meson-logs/meson-log.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload build debug logs on failure
         if: failure()
