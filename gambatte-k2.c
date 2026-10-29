@@ -155,16 +155,10 @@ static char internal_game_name[17];
 // GTK widgets
 static GtkWidget *window, *drawing_area, *drawing_area_container, *joystick_area;
 static GtkWidget *hamburger_btn = NULL, *title_label = NULL, *refresh_btn = NULL;
-static GtkWidget *popup_menu = NULL;
-static volatile gint drawing_area_abs_x = 0, drawing_area_abs_y = 0;
 static volatile gint joystick_area_abs_x = 0, joystick_area_abs_y = 0;
 static int PIXBUF_WIDTH = 0, PIXBUF_HEIGHT = 0;
 static int SCALE_FACTOR_A = 5;
 static int SCREEN_BORDER = 6;
-
-// Framebuffer/FBInk
-int fbfd = FBFD_AUTO, fbfd_refresh = FBFD_AUTO;
-FBInkConfig fbink_cfg = {0}, fbink_cfg_refresh = {0};
 
 // POSIX Mutexes (100% resilient across all Linux & GLib versions)
 static pthread_mutex_t pixbuf_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -193,7 +187,6 @@ static volatile gint refresh_screen = 0;
 
 // Buffers
 static GdkPixbuf *pixbuf = NULL;
-static guchar *grayscale_frame_ptr = NULL;
 
 static void ensure_pixbuf(int width, int height) {
     if (!pixbuf || PIXBUF_WIDTH != width || PIXBUF_HEIGHT != height) {
@@ -213,24 +206,31 @@ static gboolean on_drawing_container_expose(GtkWidget *widget, GdkEventExpose *e
     GtkAllocation alloc;
     gtk_widget_get_allocation(widget, &alloc);
 
-    /* Retro Game Boy minimalist screen bezel */
-    if (style_mode == STYLE_MODE_LIGHT) {
-        cairo_set_source_rgb(cr, 0.12, 0.12, 0.12); // Sleek charcoal bezel
-    } else {
-        cairo_set_source_rgb(cr, 0.88, 0.88, 0.88); // Crisp light bezel
-    }
-    cairo_rectangle(cr, 0, 0, alloc.width, alloc.height);
-    cairo_fill(cr);
+    double w = alloc.width;
+    double h = alloc.height;
+    double r = 8.0;
 
-    /* Subtle inner precision border */
+    /* Rounded retro Game Boy screen bezel */
+    cairo_new_path(cr);
+    cairo_arc(cr, w - r, r, r, -M_PI / 2.0, 0);
+    cairo_arc(cr, w - r, h - r, r, 0, M_PI / 2.0);
+    cairo_arc(cr, r, h - r, r, M_PI / 2.0, M_PI);
+    cairo_arc(cr, r, r, r, M_PI, 3.0 * M_PI / 2.0);
+    cairo_close_path(cr);
+
     if (style_mode == STYLE_MODE_LIGHT) {
-        cairo_set_source_rgb(cr, 0.35, 0.35, 0.35);
+        cairo_set_source_rgb(cr, 0.14, 0.14, 0.14); // Sleek charcoal Game Boy bezel
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgb(cr, 0.05, 0.05, 0.05);
+        cairo_set_line_width(cr, 2.0);
+        cairo_stroke(cr);
     } else {
-        cairo_set_source_rgb(cr, 0.65, 0.65, 0.65);
+        cairo_set_source_rgb(cr, 0.86, 0.86, 0.86); // Clean light bezel
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgb(cr, 0.95, 0.95, 0.95);
+        cairo_set_line_width(cr, 2.0);
+        cairo_stroke(cr);
     }
-    cairo_set_line_width(cr, 1.5);
-    cairo_rectangle(cr, 1.0, 1.0, alloc.width - 2.0, alloc.height - 2.0);
-    cairo_stroke(cr);
 
     cairo_destroy(cr);
     return FALSE;
@@ -283,31 +283,13 @@ static uint8_t grayscale_lut[65536] = {0};  // for RGB565 -> RGB888 -> grayscale
 static struct retro_game_info game = {0};
 // 
 typedef struct { uint16_t *data; unsigned width, height; size_t pitch; } FrameJob;
-typedef struct { int x, y, w, h, frame_width, frame_height; } DirtyRect;
 
-typedef enum { DRAW_MODE_GTK, DRAW_MODE_FBINK } DrawMode;
-static DrawMode draw_mode = DRAW_MODE_GTK;
-
-/* StyleMode and speed_multiplier defined above */
-
-////// JOYSTICK
-typedef enum { GB_BUTTON_ARC, GB_BUTTON_RECT } GbButtonGeometry;
-
-typedef struct { float rel_x, rel_y, rel_r, rel_w, rel_h; gint x, y, r, w, h, active; GbButtonGeometry geometry; const char *label; } GbButtonRegion;
+////// Touch Controls Geometry
+typedef struct { gint x, y, r; } GbButtonHitbox;
 
 enum { GB_UP, GB_DOWN, GB_LEFT, GB_RIGHT, GB_A, GB_B, GB_SELECT, GB_START, GB_BUTTON_COUNT };
 
-static GbButtonRegion gb_button_regions[GB_BUTTON_COUNT] = {
-//    rel_x  rel_y  rel_r  rel_w  rel_h  x   y   r   w   h   active geometry        label 
-    { 0.24,  0.15,  0.10,  0.14,  0.14,  0,  0,  0,  0,  0,  0,     GB_BUTTON_RECT, ""       }, // UP
-    { 0.24,  0.65,  0.10,  0.14,  0.14,  0,  0,  0,  0,  0,  0,     GB_BUTTON_RECT, ""       }, // DOWN
-    { 0.10,  0.40,  0.10,  0.14,  0.14,  0,  0,  0,  0,  0,  0,     GB_BUTTON_RECT, ""       }, // LEFT
-    { 0.38,  0.40,  0.10,  0.14,  0.14,  0,  0,  0,  0,  0,  0,     GB_BUTTON_RECT, ""       }, // RIGHT
-    { 0.89,  0.24,  0.08,  0.00,  0.00,  0,  0,  0,  0,  0,  0,     GB_BUTTON_ARC,  "A"      },
-    { 0.67,  0.43,  0.08,  0.00,  0.00,  0,  0,  0,  0,  0,  0,     GB_BUTTON_ARC,  "B"      },
-    { 0.39,  0.87,  0.07,  0.13,  0.07,  0,  0,  0,  0,  0,  0,     GB_BUTTON_RECT, "SELECT" },
-    { 0.61,  0.87,  0.07,  0.13,  0.07,  0,  0,  0,  0,  0,  0,     GB_BUTTON_RECT, "START"  }
-};
+static GbButtonHitbox gb_button_regions[GB_BUTTON_COUNT] = {0};
 
 static int gb_button_state[GB_BUTTON_COUNT] = {0};
 
@@ -337,11 +319,8 @@ static double audio_sample_rate = 32000;
 static double video_fps = 60;
 static int   frame_interval_us = 16742;
 
-/* SCALE_FACTOR_A and SCREEN_BORDER defined above */
-
-static int kill_the_ghost = 0;
-
-static uint8_t bayer16[16][16] = {
+/* Bayer 16x16 Threshold Dither Matrix */
+static const uint8_t bayer16[16][16] = {
     {  0,  64,  16,  80,   4,  68,  20,  84,   1,  65,  17,  81,   5,  69,  21,  85 },
     {128, 192, 144, 208, 132, 196, 148, 212, 129, 193, 145, 209, 133, 197, 149, 213 },
     { 32,  96,  48, 112,  36, 100,  52, 116,  33,  97,  49, 113,  37, 101,  53, 117 },
@@ -359,8 +338,6 @@ static uint8_t bayer16[16][16] = {
     { 42, 106,  58, 122,  46, 110,  62, 126,  43, 107,  59, 123,  47, 111,  63, 127 },
     {170, 234, 186, 250, 174, 238, 190, 254, 171, 235, 187, 251, 175, 239, 191, 255 }
 };
-
-/* Bayer 16x16 threshold table defined above */
 
 void init_grayscale_lut(float contrast, float brightness) {
     for (uint32_t i = 0; i < 65536; i++) {
@@ -412,7 +389,7 @@ static gpointer touch_thread_fn(gpointer data) {
     int current_slot = 0;
 
     while (running) {
-        int ret = poll(&fds, 1, 30);
+        int ret = poll(&fds, 1, 8);
         if (ret <= 0) continue;
         while (read(fd, &ev, sizeof(ev)) == sizeof(ev)) {
 
@@ -540,13 +517,7 @@ static void on_area_configure_event(GtkWidget *widget, GdkEvent *event, gpointer
     if (gdk_win)
         gdk_window_get_origin(gdk_win, &abs_x, &abs_y);
 
-    if (widget == drawing_area) {
-        g_atomic_int_set(&drawing_area_abs_x, abs_x);
-        g_atomic_int_set(&drawing_area_abs_y, abs_y);
-
-        fprintf(stdout, "drawing_area area abs pos: %4d %4d\n", abs_x, abs_y);
-
-    } else if (widget == joystick_area) {
+    if (widget == joystick_area) {
         g_atomic_int_set(&joystick_area_abs_x, abs_x);
         g_atomic_int_set(&joystick_area_abs_y, abs_y);
 
@@ -912,30 +883,16 @@ static gpointer process_frame_job(gpointer user_data) {
     return NULL;
 }
 
-static gboolean should_process_frame(void) {
-    static int64_t last_frame_time = 0;
-    const int FRAME_INTERVAL_US = 1000000 / 30; // 
-    int64_t current_time = g_get_monotonic_time();
-
-    if ((current_time - last_frame_time) > FRAME_INTERVAL_US) {
-        last_frame_time = current_time;
-        return TRUE;
-    }
-    return FALSE;
-}
-
-// emulator thread
+// emulator thread - true 60 FPS full rate rendering
 static void video_refresh(const void *data, unsigned width, unsigned height, size_t pitch) {
     if (!data) return;
 
-    if (should_process_frame()) {
-        FrameJob job;
-        job.width  = width;
-        job.height = height;
-        job.pitch  = pitch;
-        job.data   = (uint16_t*)data;
-        process_frame_job(&job);
-    }
+    FrameJob job;
+    job.width  = width;
+    job.height = height;
+    job.pitch  = pitch;
+    job.data   = (uint16_t*)data;
+    process_frame_job(&job);
 }
 
 static bool environment_cb(unsigned cmd, void *data) {
@@ -1284,9 +1241,6 @@ void on_refresh(GtkButton *button, gpointer user_data) {
     pthread_mutex_lock(&game_loop_mutex);
     pthread_mutex_lock(&pixbuf_mutex);
     fprintf(stdout, "Manual screen refresh triggered\n");
-    if (fbink_refresh) {
-        fbink_refresh(fbfd_refresh, drawing_area_abs_y, drawing_area_abs_x, PIXBUF_WIDTH, PIXBUF_HEIGHT, &fbink_cfg_refresh);
-    }
     pthread_mutex_unlock(&game_loop_mutex);
     pthread_mutex_unlock(&pixbuf_mutex);
     g_atomic_int_set(&refresh_screen, 30);
@@ -1681,7 +1635,7 @@ static void init_gtk_and_window() {
     gtk_notebook_append_page(GTK_NOTEBOOK(main_notebook), page_state, NULL);
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(drawing_area, "expose-event", G_CALLBACK(expose_event), NULL);
-    g_signal_connect(drawing_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
+/* drawing_area needs no configure-event */
     g_signal_connect(drawing_area_container, "expose-event", G_CALLBACK(on_drawing_container_expose), NULL);
     g_signal_connect(joystick_area, "expose-event", G_CALLBACK(gb_controls_draw), NULL);
     g_signal_connect(joystick_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
@@ -1723,6 +1677,7 @@ static void init_gtk_and_window() {
     }
     gtk_widget_set_size_request(drawing_area, 160 * SCALE_FACTOR_A, 144 * SCALE_FACTOR_A);
     gtk_widget_set_size_request(drawing_area_container, 160 * SCALE_FACTOR_A + SCREEN_BORDER * 2, 144 * SCALE_FACTOR_A + SCREEN_BORDER * 2);
+    gtk_container_set_border_width(GTK_CONTAINER(drawing_area_container), SCREEN_BORDER);
     gtk_widget_set_double_buffered(drawing_area, TRUE);
 
     apply_theme();
@@ -1788,7 +1743,6 @@ int main(int argc, char *argv[]) {
     }
 
     if (pixbuf) g_object_unref(pixbuf);
-    if (grayscale_frame_ptr) free(grayscale_frame_ptr);
     
     return EXIT_SUCCESS;
 }

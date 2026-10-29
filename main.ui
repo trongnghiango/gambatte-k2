@@ -64,11 +64,19 @@
                                     <object class="GtkHBox" id="center_hbox">
                                         <child>
                                             <object class="GtkLabel" id="left_spacer" />
+                                            <packing>
+                                                <property name="expand">True</property>
+                                                <property name="fill">True</property>
+                                            </packing>
                                         </child>
                                         <child>
                                             <object class="GtkVBox" id="center_vbox">
                                                 <child>
                                                     <object class="GtkLabel" id="top_spacer" />
+                                                    <packing>
+                                                        <property name="expand">True</property>
+                                                        <property name="fill">True</property>
+                                                    </packing>
                                                 </child>
                                                 <child>
                                                     <object class="GtkEventBox" id="drawing_area_container">
@@ -83,6 +91,10 @@
                                                 </child>
                                                 <child>
                                                     <object class="GtkLabel" id="bottom_spacer" />
+                                                    <packing>
+                                                        <property name="expand">True</property>
+                                                        <property name="fill">True</property>
+                                                    </packing>
                                                 </child>
                                             </object>
                                             <packing>
@@ -92,6 +104,10 @@
                                         </child>
                                         <child>
                                             <object class="GtkLabel" id="right_spacer_outer" />
+                                            <packing>
+                                                <property name="expand">True</property>
+                                                <property name="fill">True</property>
+                                            </packing>
                                         </child>
                                     </object>
                                     <packing>

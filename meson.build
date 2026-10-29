@@ -5,7 +5,7 @@ project(
   default_options: [
     'c_std=gnu99',
     'warning_level=1',
-    'optimization=2',
+    'optimization=3',
     'b_ndebug=if-release'
   ],
   meson_version: '>=0.56'
