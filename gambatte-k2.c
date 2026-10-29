@@ -27,7 +27,6 @@
 #include "fbink.h"
 #include "file_picker.h"
 #include "main_ui.h"
-#include "gray_shm.h"
 
 void sanitize_filename(const char *input, char *output, size_t maxlen);
 void retro_init(void), retro_deinit(void);
@@ -74,14 +73,30 @@ void MixerClose(void *_) __attribute__((weak));
 void MixerReleaseBufPlay(void *_, int __, uint8_t *___) __attribute__((weak));
 int MixerGetNumBytes(void *_) __attribute__((weak));
 
-typedef struct {
-    GrayShm *presenter;
-} MainState;
-static MainState *state;
-
 // Buffers
-static GdkPixbuf *pixbuf = NULL, *pixbuf_dithered = NULL;
+static GdkPixbuf *pixbuf = NULL;
 static guchar *grayscale_frame_ptr = NULL;
+
+static void ensure_pixbuf(int width, int height) {
+    if (!pixbuf || PIXBUF_WIDTH != width || PIXBUF_HEIGHT != height) {
+        if (pixbuf) g_object_unref(pixbuf);
+        PIXBUF_WIDTH = width;
+        PIXBUF_HEIGHT = height;
+        pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, width, height);
+    }
+}
+
+static gboolean expose_event(GtkWidget *widget, GdkEventExpose *event, gpointer data) {
+    if (!pixbuf) return FALSE;
+    g_mutex_lock(pixbuf_mutex);
+    GdkWindow *win = gtk_widget_get_window(widget);
+    cairo_t *cr = gdk_cairo_create(win);
+    gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    g_mutex_unlock(pixbuf_mutex);
+    return FALSE;
+}
 
 static uint8_t grayscale_lut[65536] = {0};  // for RGB565 -> RGB888 -> grayscale
 static struct retro_game_info game = {0};
@@ -453,216 +468,46 @@ static size_t audio_sample_batch(const int16_t *data, size_t frames) {
 // STEP 2
 static gpointer process_frame_job(gpointer user_data) {
     FrameJob *job = user_data;
-    
-    // DEBUG SECTION START
-    static int skipped_frame_fps_count;
-    static int skipped_frame_mutex_count;
-    
-    static struct timespec last_frame_time = {0, 0};
-    static struct timespec now_time;
-    clock_gettime(CLOCK_MONOTONIC, &now_time);
-    double elapsed = (now_time.tv_sec - last_frame_time.tv_sec) +
-                    (now_time.tv_nsec - last_frame_time.tv_nsec) / 1e9;
+    if (!job || !job->data) return NULL;
 
-    clock_t t = clock(); 
-    // --- FPS  ---
-    static int frame_count = 0;
-    static time_t last_time = 0;
-    time_t now = time(NULL);
-    double time_taken;
-    // DEBUG SECTION END
-
-    if (!state->presenter) {
-        return NULL;
-    }
-
-    const uint16_t *emulator_frame_ptr = job->data;   // Pointer to RGB565 uint16_t data emulator_frame 
-    int emulator_frame_width     = job->width;          // Width of the emulator frame: 160px
-    int emulator_frame_height    = job->height;         // Height of the emulator frame: 144px
+    const uint16_t *emulator_frame_ptr = job->data;
+    int emulator_frame_width     = job->width;
+    int emulator_frame_height    = job->height;
     int emulator_frame_rowstride = job->pitch / sizeof(uint16_t);
 
-    int scaled_frame_width     = emulator_frame_width  * SCALE_FACTOR_A; // refactor, already set
-    int scaled_frame_height    = emulator_frame_height * SCALE_FACTOR_A; // refactor, already set
-    int scaled_frame_channels  = 1;                                      // 8 bit per pixel (0-255) = 1 channel grayscale = Y8
-    int scaled_frame_rowstride = scaled_frame_width * scaled_frame_channels;
+    int scaled_frame_width  = emulator_frame_width  * SCALE_FACTOR_A;
+    int scaled_frame_height = emulator_frame_height * SCALE_FACTOR_A;
 
-    int min_x = scaled_frame_width, min_y = scaled_frame_height, max_x = -1, max_y = -1, dirty_count = 0;
+    ensure_pixbuf(scaled_frame_width, scaled_frame_height);
+    if (!pixbuf) return NULL;
 
-    // TODO refactor, there will be no more size changes.
-    if (!grayscale_frame_ptr || PIXBUF_WIDTH != scaled_frame_width || PIXBUF_HEIGHT != scaled_frame_height) {
-        fprintf(stderr, "ensure pixbuf size: %d vs %d\n", PIXBUF_WIDTH, scaled_frame_width);
-        if (grayscale_frame_ptr) {
-            free(grayscale_frame_ptr);
-        }
-        PIXBUF_WIDTH        = scaled_frame_width;  // global
-        PIXBUF_HEIGHT       = scaled_frame_height; // global
-        grayscale_frame_ptr = malloc(scaled_frame_height * scaled_frame_rowstride); // 1-channel grayscale buffer
-    }
+    g_mutex_lock(pixbuf_mutex);
+    guchar *dst = gdk_pixbuf_get_pixels(pixbuf);
+    int dst_rowstride = gdk_pixbuf_get_rowstride(pixbuf);
+    int nchan = gdk_pixbuf_get_n_channels(pixbuf);
 
-    const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(&state->presenter); // 830Kb
-
-    uint16_t *emu_row_ptr = emulator_frame_ptr;
-    // scale frame to the final pixbuf size
-    for (int y = 0, y_scaled = 0; y < emulator_frame_height; y++, y_scaled += SCALE_FACTOR_A) { // 144
-
-        const uint16_t *emulator_src_row = emulator_frame_ptr + y * emulator_frame_rowstride;
-        uint8_t *grayscale_dst_row = grayscale_frame_ptr + y_scaled * scaled_frame_rowstride;
-
-        int line_min_x = emulator_frame_width, line_max_x = -1;
-
-        for (int x = 0, x_scaled_base = 0; x < emulator_frame_width; x++, x_scaled_base += SCALE_FACTOR_A) { // 160
-            uint8_t gray = grayscale_lut[emulator_src_row[x]];
-            uint8_t prev = grayscale_dst_row[x_scaled_base];                    
-            // Check if pixel changed compared to previous grayscale_frame
-            if (gray == prev) continue;
-            if (x < min_x) min_x = x;
-            if (x > max_x) max_x = x;
-            if (y < min_y) min_y = y;
-            if (y > max_y) max_y = y;
-            if (x < line_min_x) line_min_x = x;
-            if (x > line_max_x) line_max_x = x;
-            memset(&grayscale_dst_row[x_scaled_base], gray, SCALE_FACTOR_A);
-            dirty_count++;
-        }
-
-        if (line_max_x < 0) continue;
-
-        int rx0 = (line_min_x * SCALE_FACTOR_A) & ~0xF;
-        int rx1 = (line_max_x * SCALE_FACTOR_A) + (SCALE_FACTOR_A - 1);
-
-        // Vertical scaling (nearest neighbor)
-        for (int sy = 0; sy < SCALE_FACTOR_A; sy++) {       // (0 is the source)
-            uint8_t *dst_row = grayscale_dst_row + sy * scaled_frame_rowstride;
-            
-            if (sy > 0) {
-                memcpy(dst_row, grayscale_dst_row, scaled_frame_rowstride);
+    for (int y = 0, y_scaled = 0; y < emulator_frame_height; y++, y_scaled += SCALE_FACTOR_A) {
+        const uint16_t *src_row = emulator_frame_ptr + y * emulator_frame_rowstride;
+        for (int x = 0, x_scaled = 0; x < emulator_frame_width; x++, x_scaled += SCALE_FACTOR_A) {
+            uint8_t gray = grayscale_lut[src_row[x]];
+            for (int sy = 0; sy < SCALE_FACTOR_A; sy++) {
+                guchar *row = dst + (y_scaled + sy) * dst_rowstride;
+                uint8_t threshold = bayer16[(y_scaled + sy) & 15][x_scaled & 15];
+                uint8_t bw = (gray >= threshold) ? 255 : 0;
+                for (int sx = 0; sx < SCALE_FACTOR_A; sx++) {
+                    int px = (x_scaled + sx) * nchan;
+                    row[px + 0] = bw;
+                    row[px + 1] = bw;
+                    row[px + 2] = bw;
+                }
             }
-
-#ifdef __ARM_NEON
-            uint8x16_t thresh = t_vecs[(y_scaled + sy) & 15];
-            uint8_t *dithered_row = (uint8_t*)dithered_frame_ptr + ((y_scaled + sy) * scaled_frame_rowstride);
-            for (int rx = rx0; rx <= rx1; rx += 16) {
-                vst1q_u8( dithered_row + rx, vcgeq_u8(vld1q_u8(dst_row + rx), thresh) );
-            }
-#else
-            uint8_t *dithered_row = (uint8_t*)dithered_frame_ptr + ((y_scaled + sy) * scaled_frame_rowstride);
-            int row_idx = (y_scaled + sy) & 15;
-            for (int rx = rx0; rx <= rx1; rx++) {
-                uint8_t threshold = bayer16[row_idx][rx & 15];
-                dithered_row[rx] = (dst_row[rx] >= threshold) ? 255 : 0;
-            }
-#endif  
         }
     }
+    g_mutex_unlock(pixbuf_mutex);
 
-    // 6 (960x864): 190.080 iterations, like 435x435 | 3 480x432: 82.080 iterations, like 286x286
-    // 6 (960x864): 74.880|22.040+51.840
-
-    if (!dirty_count && !g_atomic_int_get(&refresh_screen)) {
-        return NULL;
+    if (drawing_area) {
+        gtk_widget_queue_draw(drawing_area);
     }
-
-    min_x = min_x * SCALE_FACTOR_A;
-    max_x = max_x * SCALE_FACTOR_A;
-    min_y = min_y * SCALE_FACTOR_A;
-    max_y = max_y * SCALE_FACTOR_A;
-
-    int rect_x = min_x;
-    int rect_y = min_y;
-    int rect_w = max_x - min_x + SCALE_FACTOR_A;
-    int rect_h = max_y - min_y + SCALE_FACTOR_A;
-
-    
-
-    // use dirt rect
-    // for (int y = rect_y; y < rect_y + rect_h; y++) { 
-    //     uint8x16_t t = t_vecs[y & 15];
-    //     const uint8_t *src_row = grayscale_frame_ptr + y * scaled_frame_rowstride;
-    //     uint8_t *dst_row       = dithered_frame_ptr  + y * scaled_frame_rowstride;
-
-    //     for (int x = rect_x & ~0xF; x < rect_x + rect_w; x += 16) {
-    //         vst1q_u8(dst_row + x, vcgeq_u8(vld1q_u8(src_row + x), t));
-    //     }
-    // }
-    
-    // int w = gray_shm_get_width(&state->presenter);
-    // int h = gray_shm_get_height(&state->presenter);
-
-    if ( g_atomic_int_get(&refresh_screen) > 0 ) {
-        g_atomic_int_add(&refresh_screen, -1);
-        rect_x = 0;
-        rect_y = 0;
-        rect_w = scaled_frame_width;
-        rect_h = scaled_frame_height;          
-    }
-
-    if (draw_mode == DRAW_MODE_GTK) {
-
-        gray_shm_commit_rect(&state->presenter, rect_x, rect_y, rect_w, rect_h);
-        //gray_shm_commit_rect(&state->presenter, 0, 0, w, h);
-
-    } else if (draw_mode == DRAW_MODE_FBINK) {
-
-        // int ret = fbink_print_raw_data(
-        //     fbfd,
-        //     frame,
-        //     scaled_frame_width,
-        //     scaled_frame_height,
-        //     scaled_frame_width * scaled_frame_height,
-        //     g_atomic_int_get(&drawing_area_abs_x), // x_off
-        //     g_atomic_int_get(&drawing_area_abs_y), // y_off
-        //     &fbink_cfg
-        // );
-
-        // Pointer to the start of the region
-        const uint8_t *region_pixels = dithered_frame_ptr + (rect_y * scaled_frame_rowstride) + (rect_x * scaled_frame_channels);
-
-        // Allocate a buffer for the region (fbink expects packed, contiguous data)
-        const size_t region_len = rect_w * rect_h * scaled_frame_channels;
-
-        uint8_t *region_buf = malloc(region_len);
-
-        for (int y = 0; y < rect_h; ++y) {
-            memcpy(region_buf + y * rect_w * scaled_frame_channels,
-                region_pixels + y * scaled_frame_rowstride,
-                                    rect_w * scaled_frame_channels);
-        }
-
-        int ret = fbink_print_raw_data(
-            fbfd,
-            region_buf,
-            rect_w,
-            rect_h,
-            region_len,
-            g_atomic_int_get(&drawing_area_abs_x) + rect_x,
-            g_atomic_int_get(&drawing_area_abs_y) + rect_y,
-            &fbink_cfg
-        );
-
-        free(region_buf);    
-        
-        if (ret < 0) {
-            fprintf(stderr, "fbink_print_raw_data failed: %d\n", ret);
-        }        
-
-    }
-
-    // DEBUG SECTION START
-    t = clock() - t; 
-    time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds 
-    frame_count++;
-    if (now > last_time) { // Print FPS every 5 seconds
-        fprintf(stdout,"refresh FPS: %2d ttaken: %.4f dirty: %5d min_x: %3d min_y: %3d max_x: %3d max_y: %3d rect_x: %3d rect_y: %3d rect_w: %3d rect_h: %3d | w:%3d h:%3d\n",
-            frame_count, time_taken, dirty_count,
-            min_x, min_y, max_x, max_y,
-            rect_x, rect_y, rect_w, rect_h,
-            scaled_frame_width, scaled_frame_height);
-
-        frame_count = skipped_frame_fps_count = skipped_frame_mutex_count = 0;
-        last_time = now;
-    }
-    // DEBUG SECTION END    
-    clock_gettime(CLOCK_MONOTONIC, &last_frame_time);
 
     return NULL;
 }
@@ -1079,10 +924,6 @@ void on_refresh(GtkButton *button, gpointer user_data) {
 // GTK button callback to quit
 void on_quit(GtkButton *button, gpointer user_data) {
     running = FALSE; // Signal the thread to stop
-    if (state->presenter) {
-        gray_shm_destroy(state->presenter);
-        state->presenter = NULL;
-    }    
     gtk_main_quit();
 }
 
@@ -1119,31 +960,7 @@ void on_toggle_style(GtkToggleButton *toggle, gpointer window) {
     g_atomic_int_set(&refresh_screen, 30);
 }
 
-static void on_area_realize(GtkWidget *widget, MainState *st)
-{
-    GdkWindow *win = gtk_widget_get_window(widget);
-    xcb_window_t xid = GDK_WINDOW_XID(win);
-    GtkAllocation alloc;
-    gtk_widget_get_allocation(widget, &alloc);
-    int w = alloc.width, h = alloc.height;
-    st->presenter = gray_shm_create(xid, w, h);
 
-    GdkWindow *gdk_win = gtk_widget_get_window(widget);
-    int abs_x = 0, abs_y = 0;
-    if (gdk_win)
-        gdk_window_get_origin(gdk_win, &abs_x, &abs_y);
-
-    g_print("on_area_realize xid: %d w: %d h: %d abs_x: %d abs_y: %d \n", xid, gray_shm_get_width(st->presenter), gray_shm_get_height(st->presenter), abs_x, abs_y);
-}
-
-static void on_area_size_allocate(GtkWidget *widget, GtkAllocation *allocation, MainState *st)
-{
-    if (st->presenter) {
-        gray_shm_resize(st->presenter, allocation->width, allocation->height);
-    }
-
-    g_print("on_area_size_allocate w: %d h: %d\n", allocation->width, allocation->height);
-}
 
 static void init_gtk_and_window() {
 
@@ -1207,7 +1024,7 @@ static void init_gtk_and_window() {
 
     // Set up signals not handled by Glade
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
-    // g_signal_connect(drawing_area, "expose-event", G_CALLBACK(expose_event), NULL);
+    g_signal_connect(drawing_area, "expose-event", G_CALLBACK(expose_event), NULL);
     g_signal_connect(drawing_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
     g_signal_connect(joystick_area, "expose-event", G_CALLBACK(gb_controls_draw), NULL);
     g_signal_connect(joystick_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
@@ -1218,8 +1035,6 @@ static void init_gtk_and_window() {
     g_signal_connect(save_btn, "clicked", G_CALLBACK(on_state_mode_click), GINT_TO_POINTER(STATE_MODE_SAVE));
 
     g_signal_connect(style_toggle, "toggled", G_CALLBACK(on_toggle_style), window);
-    g_signal_connect(drawing_area, "realize",       G_CALLBACK(on_area_realize),       &state);
-    g_signal_connect(drawing_area, "size-allocate", G_CALLBACK(on_area_size_allocate) ,&state);
     //g_signal_connect(window,       "destroy",       G_CALLBACK(on_area_destroy),       &state);
     gtk_widget_set_name(window,                 "window");
     gtk_widget_set_name(drawing_area,           "drawing_area");

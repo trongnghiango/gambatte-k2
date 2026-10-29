@@ -17,22 +17,10 @@ gtk_dep = dependency('gtk+-2.0', required: true)
 threads_dep = dependency('threads')
 m_dep = cc.find_library('m', required: false)
 
-xcb_dep = dependency('xcb', required: false)
-if not xcb_dep.found()
-  xcb_dep = cc.find_library('xcb', required: true)
-endif
-
-xcb_shm_dep = dependency('xcb-shm', required: false)
-if not xcb_shm_dep.found()
-  xcb_shm_dep = cc.find_library('xcb-shm', required: true)
-endif
-
 deps = [
   gtk_dep,
   threads_dep,
-  m_dep,
-  xcb_dep,
-  xcb_shm_dep
+  m_dep
 ]
 
 # Libretro core: link libgambatte_libretro.a (statically built archive)
@@ -49,8 +37,7 @@ endif
 
 sources = files(
   'gambatte-k2.c',
-  'file_picker.c',
-  'gray_shm.c'
+  'file_picker.c'
 )
 
 c_args = [
