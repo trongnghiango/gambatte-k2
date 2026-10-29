@@ -1,10 +1,9 @@
 project(
   'gambatte-k2',
-  ['c', 'cpp'],
+  'c',
   version: '2.0.0',
   default_options: [
     'c_std=gnu99',
-    'cpp_std=c++11',
     'warning_level=1',
     'optimization=2',
     'b_ndebug=if-release'
@@ -13,7 +12,6 @@ project(
 )
 
 cc = meson.get_compiler('c')
-cpp = meson.get_compiler('cpp')
 
 gtk_dep = dependency('gtk+-2.0', required: true)
 threads_dep = dependency('threads')

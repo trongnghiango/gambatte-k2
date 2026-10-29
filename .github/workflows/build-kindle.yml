@@ -97,6 +97,12 @@ jobs:
           echo "KINDLE_STRIP=$STRIPPER" >> "$GITHUB_ENV"
           echo "Using strip tool: $STRIPPER"
 
+          if ! grep -q 'cpp =' "$CROSS_FILE"; then
+              sed -i "/^c =/a cpp = '$CXX_COMPILER'" "$CROSS_FILE"
+          fi
+          echo "--- Kindle Meson Cross File ---"
+          cat "$CROSS_FILE"
+
       - name: Build Gambatte Libretro Core for Kindle ARMv7
         run: |
           set -euxo pipefail
@@ -153,6 +159,14 @@ jobs:
         with:
           name: gambatte-k2-kual
           path: gambatte-k2-kual.zip
+
+      - name: Dump build debug logs on failure
+        if: failure()
+        run: |
+          echo "=== NINJA LOG ==="
+          cat /tmp/ninja.log || true
+          echo "=== MESON LOG ==="
+          cat builddir_kindlehf/meson-logs/meson-log.txt || true
 
       - name: Upload build debug logs on failure
         if: failure()
