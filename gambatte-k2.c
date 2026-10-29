@@ -159,6 +159,8 @@ static GtkWidget *popup_menu = NULL;
 static volatile gint drawing_area_abs_x = 0, drawing_area_abs_y = 0;
 static volatile gint joystick_area_abs_x = 0, joystick_area_abs_y = 0;
 static int PIXBUF_WIDTH = 0, PIXBUF_HEIGHT = 0;
+static int SCALE_FACTOR_A = 6;
+static int SCREEN_BORDER = 5;
 
 // Framebuffer/FBInk
 int fbfd = FBFD_AUTO, fbfd_refresh = FBFD_AUTO;
@@ -203,8 +205,12 @@ static gboolean expose_event(GtkWidget *widget, GdkEventExpose *event, gpointer 
     if (win) {
         cairo_t *cr = gdk_cairo_create(win);
         if (cr) {
+            cairo_save(cr);
+            cairo_scale(cr, (double)SCALE_FACTOR_A, (double)SCALE_FACTOR_A);
             gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
+            cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
             cairo_paint(cr);
+            cairo_restore(cr);
             cairo_destroy(cr);
         }
     }
@@ -271,9 +277,7 @@ static double audio_sample_rate = 32000;
 static double video_fps = 60;
 static int   frame_interval_us = 16742;
 
-static int SCALE_FACTOR_A = 3;
-
-static int SCREEN_BORDER = 5; // px
+/* SCALE_FACTOR_A and SCREEN_BORDER defined above */
 
 static int kill_the_ghost = 0;
 
@@ -386,7 +390,10 @@ static gpointer touch_thread_fn(gpointer data) {
     return NULL;
 }
 
+static volatile gint redraw_pending = 0;
+
 static gboolean trigger_drawing_redraw(gpointer data) {
+    g_atomic_int_set(&redraw_pending, 0);
     if (drawing_area && gtk_widget_get_realized(drawing_area)) {
         gtk_widget_queue_draw(drawing_area);
     }
@@ -805,7 +812,7 @@ static size_t audio_sample_batch(const int16_t *data, size_t frames) {
     return frames;
 }
 
-// STEP 2
+// STEP 2 - Blazing fast native 160x144 frame processing
 static gpointer process_frame_job(gpointer user_data) {
     FrameJob *job = user_data;
     if (!job || !job->data) return NULL;
@@ -815,10 +822,7 @@ static gpointer process_frame_job(gpointer user_data) {
     int emulator_frame_height    = job->height;
     int emulator_frame_rowstride = job->pitch / sizeof(uint16_t);
 
-    int scaled_frame_width  = emulator_frame_width  * SCALE_FACTOR_A;
-    int scaled_frame_height = emulator_frame_height * SCALE_FACTOR_A;
-
-    ensure_pixbuf(scaled_frame_width, scaled_frame_height);
+    ensure_pixbuf(emulator_frame_width, emulator_frame_height);
     if (!pixbuf) return NULL;
 
     pthread_mutex_lock(&pixbuf_mutex);
@@ -826,26 +830,23 @@ static gpointer process_frame_job(gpointer user_data) {
     int dst_rowstride = gdk_pixbuf_get_rowstride(pixbuf);
     int nchan = gdk_pixbuf_get_n_channels(pixbuf);
 
-    for (int y = 0, y_scaled = 0; y < emulator_frame_height; y++, y_scaled += SCALE_FACTOR_A) {
+    for (int y = 0; y < emulator_frame_height; ++y) {
         const uint16_t *src_row = emulator_frame_ptr + y * emulator_frame_rowstride;
-        for (int x = 0, x_scaled = 0; x < emulator_frame_width; x++, x_scaled += SCALE_FACTOR_A) {
+        guchar *dst_row = dst + y * dst_rowstride;
+        for (int x = 0; x < emulator_frame_width; ++x) {
             uint8_t gray = grayscale_lut[src_row[x]];
-            for (int sy = 0; sy < SCALE_FACTOR_A; sy++) {
-                guchar *row = dst + (y_scaled + sy) * dst_rowstride;
-                uint8_t threshold = bayer16[(y_scaled + sy) & 15][x_scaled & 15];
-                uint8_t bw = (gray >= threshold) ? 255 : 0;
-                for (int sx = 0; sx < SCALE_FACTOR_A; sx++) {
-                    int px = (x_scaled + sx) * nchan;
-                    row[px + 0] = bw;
-                    row[px + 1] = bw;
-                    row[px + 2] = bw;
-                }
-            }
+            uint8_t threshold = bayer16[y & 15][x & 15];
+            uint8_t bw = (gray >= threshold) ? 255 : 0;
+            dst_row[x * nchan + 0] = bw;
+            dst_row[x * nchan + 1] = bw;
+            dst_row[x * nchan + 2] = bw;
         }
     }
     pthread_mutex_unlock(&pixbuf_mutex);
 
-    g_idle_add(trigger_drawing_redraw, NULL);
+    if (g_atomic_int_compare_and_exchange(&redraw_pending, 0, 1)) {
+        g_idle_add(trigger_drawing_redraw, NULL);
+    }
 
     return NULL;
 }
