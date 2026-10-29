@@ -185,6 +185,12 @@ void MixerClose(void *_) __attribute__((weak));
 void MixerReleaseBufPlay(void *_, int __, uint8_t *___) __attribute__((weak));
 int MixerGetNumBytes(void *_) __attribute__((weak));
 
+// Theme Style
+typedef enum { STYLE_MODE_DARK, STYLE_MODE_LIGHT } StyleMode;
+static StyleMode style_mode = STYLE_MODE_LIGHT;
+static int speed_multiplier = 1;
+static volatile gint refresh_screen = 0;
+
 // Buffers
 static GdkPixbuf *pixbuf = NULL;
 static guchar *grayscale_frame_ptr = NULL;
@@ -199,18 +205,41 @@ static void ensure_pixbuf(int width, int height) {
 }
 
 static gboolean expose_event(GtkWidget *widget, GdkEventExpose *event, gpointer data) {
-    if (!pixbuf) return FALSE;
     pthread_mutex_lock(&pixbuf_mutex);
     GdkWindow *win = gtk_widget_get_window(widget);
     if (win) {
         cairo_t *cr = gdk_cairo_create(win);
         if (cr) {
-            cairo_save(cr);
-            cairo_scale(cr, (double)SCALE_FACTOR_A, (double)SCALE_FACTOR_A);
-            gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
-            cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
-            cairo_paint(cr);
-            cairo_restore(cr);
+            if (pixbuf) {
+                cairo_save(cr);
+                cairo_scale(cr, (double)SCALE_FACTOR_A, (double)SCALE_FACTOR_A);
+                gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
+                cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
+                cairo_paint(cr);
+                cairo_restore(cr);
+            } else {
+                if (style_mode == STYLE_MODE_LIGHT) {
+                    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+                } else {
+                    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+                }
+                cairo_paint(cr);
+
+                if (style_mode == STYLE_MODE_LIGHT) {
+                    cairo_set_source_rgb(cr, 0.45, 0.45, 0.45);
+                } else {
+                    cairo_set_source_rgb(cr, 0.65, 0.65, 0.65);
+                }
+                cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+                cairo_set_font_size(cr, 22.0);
+                const char *msg = "No ROM Loaded - Tap MENU to Open ROM";
+                cairo_text_extents_t te;
+                cairo_text_extents(cr, msg, &te);
+                GtkAllocation alloc;
+                gtk_widget_get_allocation(widget, &alloc);
+                cairo_move_to(cr, (alloc.width - te.width) / 2.0 - te.x_bearing, (alloc.height + te.height) / 2.0);
+                cairo_show_text(cr, msg);
+            }
             cairo_destroy(cr);
         }
     }
@@ -227,10 +256,8 @@ typedef struct { int x, y, w, h, frame_width, frame_height; } DirtyRect;
 typedef enum { DRAW_MODE_GTK, DRAW_MODE_FBINK } DrawMode;
 static DrawMode draw_mode = DRAW_MODE_GTK;
 
-typedef enum { STYLE_MODE_DARK, STYLE_MODE_LIGHT } StyleMode;
-static StyleMode style_mode = STYLE_MODE_LIGHT;
-static int speed_multiplier = 1;
-static volatile gint refresh_screen = 0;
+/* StyleMode and speed_multiplier defined above */
+
 ////// JOYSTICK
 typedef enum { GB_BUTTON_ARC, GB_BUTTON_RECT } GbButtonGeometry;
 
@@ -1366,68 +1393,235 @@ static void apply_theme(void) {
     g_atomic_int_set(&refresh_screen, 30);
 }
 
-static void on_toggle_theme_click(GtkMenuItem *item, gpointer user_data) {
-    style_mode = (style_mode == STYLE_MODE_LIGHT) ? STYLE_MODE_DARK : STYLE_MODE_LIGHT;
-    apply_theme();
-}
-
-static GtkWidget *item_speed = NULL;
-
-static void on_toggle_speed_click(GtkMenuItem *item, gpointer user_data) {
-    if (speed_multiplier == 1) {
-        speed_multiplier = 2;
-        if (item_speed) gtk_menu_item_set_label(GTK_MENU_ITEM(item_speed), "Speed: 2x [FAST]");
-    } else {
-        speed_multiplier = 1;
-        if (item_speed) gtk_menu_item_set_label(GTK_MENU_ITEM(item_speed), "Speed: 1x [NORMAL]");
+static void on_end_game(void) {
+    fprintf(stderr, "on_end_game: Closing current game...\n");
+    pthread_mutex_lock(&game_loop_mutex);
+    ready = FALSE;
+    safely_unload_current_game();
+    internal_game_name[0] = '\0';
+    if (title_label) {
+        gtk_label_set_text(GTK_LABEL(title_label), "GAMBATTE");
     }
+    pthread_mutex_unlock(&game_loop_mutex);
+
+    if (drawing_area) {
+        gtk_widget_queue_draw(drawing_area);
+    }
+    g_atomic_int_set(&refresh_screen, 20);
+    fprintf(stderr, "on_end_game: Game closed and memory freed successfully.\n");
 }
 
-static void create_popup_menu(GtkWidget *win) {
-    popup_menu = gtk_menu_new();
+enum {
+    MENU_ACTION_CLOSE = 0,
+    MENU_ACTION_OPEN_ROM,
+    MENU_ACTION_SAVE_STATE,
+    MENU_ACTION_LOAD_STATE,
+    MENU_ACTION_TOGGLE_SPEED,
+    MENU_ACTION_END_GAME,
+    MENU_ACTION_TOGGLE_THEME,
+    MENU_ACTION_REFRESH,
+    MENU_ACTION_QUIT
+};
 
-    GtkWidget *item_open = gtk_menu_item_new_with_label("Open ROM...");
-    g_signal_connect(item_open, "activate", G_CALLBACK(on_open), NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_open);
+static void on_menu_btn_clicked(GtkWidget *button, gpointer user_data) {
+    int action = GPOINTER_TO_INT(user_data);
+    GtkWidget *dialog = gtk_widget_get_toplevel(button);
+    gtk_dialog_response(GTK_DIALOG(dialog), action);
+}
 
-    GtkWidget *item_save = gtk_menu_item_new_with_label("Save State");
-    g_signal_connect(item_save, "activate", G_CALLBACK(on_save_state_click), NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_save);
+static void show_fullscreen_menu(GtkWindow *parent) {
+    /* 1. Safely pause running game */
+    pthread_mutex_lock(&game_loop_mutex);
+    gboolean was_ready = ready;
+    ready = FALSE;
+    pthread_mutex_unlock(&game_loop_mutex);
 
-    GtkWidget *item_load = gtk_menu_item_new_with_label("Load State");
-    g_signal_connect(item_load, "activate", G_CALLBACK(on_load_state_click), NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_load);
+    g_usleep(20000);
 
-    GtkWidget *sep1 = gtk_separator_menu_item_new();
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), sep1);
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        "L:A_N:application_ID:gambatte_PC:N",
+        parent,
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "  CLOSE MENU  ", MENU_ACTION_CLOSE,
+        NULL
+    );
 
-    item_speed = gtk_menu_item_new_with_label("Speed: 1x [NORMAL]");
-    g_signal_connect(item_speed, "activate", G_CALLBACK(on_toggle_speed_click), NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_speed);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 920, 1280);
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ALWAYS);
 
-    GtkWidget *item_theme = gtk_menu_item_new_with_label("Theme: Light / Dark");
-    g_signal_connect(item_theme, "activate", G_CALLBACK(on_toggle_theme_click), NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_theme);
+    GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content_area), 24);
 
-    GtkWidget *item_refresh = gtk_menu_item_new_with_label("Refresh Screen");
-    g_signal_connect(item_refresh, "activate", G_CALLBACK(on_refresh), NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_refresh);
+    /* Title & Subtitle Header */
+    GtkWidget *title_lbl = gtk_label_new("GAMBATTE MENU");
+    PangoFontDescription *tfont = pango_font_description_from_string("Sans Bold 24");
+    gtk_widget_modify_font(title_lbl, tfont);
+    pango_font_description_free(tfont);
+    gtk_box_pack_start(GTK_BOX(content_area), title_lbl, FALSE, FALSE, 8);
 
-    GtkWidget *sep2 = gtk_separator_menu_item_new();
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), sep2);
+    gchar *sub_text = NULL;
+    if (internal_game_name[0] != '\0') {
+        sub_text = g_strdup_printf("Current Game: %s", internal_game_name);
+    } else {
+        sub_text = g_strdup("[ No Game Running ]");
+    }
+    GtkWidget *sub_lbl = gtk_label_new(sub_text);
+    g_free(sub_text);
+    PangoFontDescription *sfont = pango_font_description_from_string("Sans 15");
+    gtk_widget_modify_font(sub_lbl, sfont);
+    pango_font_description_free(sfont);
+    gtk_box_pack_start(GTK_BOX(content_area), sub_lbl, FALSE, FALSE, 4);
 
-    GtkWidget *item_quit = gtk_menu_item_new_with_label("Quit");
-    g_signal_connect(item_quit, "activate", G_CALLBACK(on_quit), NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_quit);
+    GtkWidget *sep = gtk_hseparator_new();
+    gtk_box_pack_start(GTK_BOX(content_area), sep, FALSE, FALSE, 12);
 
-    gtk_widget_show_all(popup_menu);
+    /* Buttons Container */
+    GtkWidget *vbox = gtk_vbox_new(TRUE, 10);
+    gtk_box_pack_start(GTK_BOX(content_area), vbox, TRUE, TRUE, 8);
+
+    PangoFontDescription *bfont = pango_font_description_from_string("Sans Bold 16");
+
+    /* 1. Open ROM */
+    GtkWidget *btn_open = gtk_button_new_with_label("Open ROM...");
+    gtk_widget_modify_font(btn_open, bfont);
+    gtk_widget_set_size_request(btn_open, -1, 62);
+    g_signal_connect(btn_open, "clicked", G_CALLBACK(on_menu_btn_clicked), GINT_TO_POINTER(MENU_ACTION_OPEN_ROM));
+    gtk_box_pack_start(GTK_BOX(vbox), btn_open, TRUE, TRUE, 2);
+
+    /* 2. Save State */
+    GtkWidget *btn_save = gtk_button_new_with_label("Save State (Slot 1-5)");
+    gtk_widget_modify_font(btn_save, bfont);
+    gtk_widget_set_size_request(btn_save, -1, 62);
+    if (was_ready && game.data) {
+        g_signal_connect(btn_save, "clicked", G_CALLBACK(on_menu_btn_clicked), GINT_TO_POINTER(MENU_ACTION_SAVE_STATE));
+    } else {
+        gtk_widget_set_sensitive(btn_save, FALSE);
+    }
+    gtk_box_pack_start(GTK_BOX(vbox), btn_save, TRUE, TRUE, 2);
+
+    /* 3. Load State */
+    GtkWidget *btn_load = gtk_button_new_with_label("Load State (Slot 1-5)");
+    gtk_widget_modify_font(btn_load, bfont);
+    gtk_widget_set_size_request(btn_load, -1, 62);
+    if (was_ready && game.data) {
+        g_signal_connect(btn_load, "clicked", G_CALLBACK(on_menu_btn_clicked), GINT_TO_POINTER(MENU_ACTION_LOAD_STATE));
+    } else {
+        gtk_widget_set_sensitive(btn_load, FALSE);
+    }
+    gtk_box_pack_start(GTK_BOX(vbox), btn_load, TRUE, TRUE, 2);
+
+    /* 4. Speed Toggle */
+    gchar *speed_str = (speed_multiplier == 2) ? g_strdup("Speed: 2x [FAST]  (Tap to switch 1x)") : g_strdup("Speed: 1x [NORMAL]  (Tap to switch 2x)");
+    GtkWidget *btn_speed = gtk_button_new_with_label(speed_str);
+    g_free(speed_str);
+    gtk_widget_modify_font(btn_speed, bfont);
+    gtk_widget_set_size_request(btn_speed, -1, 62);
+    g_signal_connect(btn_speed, "clicked", G_CALLBACK(on_menu_btn_clicked), GINT_TO_POINTER(MENU_ACTION_TOGGLE_SPEED));
+    gtk_box_pack_start(GTK_BOX(vbox), btn_speed, TRUE, TRUE, 2);
+
+    /* 5. End Game (Safely Close Game) */
+    GtkWidget *btn_end = gtk_button_new_with_label("End Game (Safely Close Current Game)");
+    gtk_widget_modify_font(btn_end, bfont);
+    gtk_widget_set_size_request(btn_end, -1, 62);
+    if (was_ready && game.data) {
+        g_signal_connect(btn_end, "clicked", G_CALLBACK(on_menu_btn_clicked), GINT_TO_POINTER(MENU_ACTION_END_GAME));
+    } else {
+        gtk_widget_set_sensitive(btn_end, FALSE);
+    }
+    gtk_box_pack_start(GTK_BOX(vbox), btn_end, TRUE, TRUE, 2);
+
+    /* 6. Theme Toggle */
+    gchar *theme_str = (style_mode == STYLE_MODE_LIGHT) ? g_strdup("Theme: Light Mode  (Tap for Dark)") : g_strdup("Theme: Dark Mode  (Tap for Light)");
+    GtkWidget *btn_theme = gtk_button_new_with_label(theme_str);
+    g_free(theme_str);
+    gtk_widget_modify_font(btn_theme, bfont);
+    gtk_widget_set_size_request(btn_theme, -1, 62);
+    g_signal_connect(btn_theme, "clicked", G_CALLBACK(on_menu_btn_clicked), GINT_TO_POINTER(MENU_ACTION_TOGGLE_THEME));
+    gtk_box_pack_start(GTK_BOX(vbox), btn_theme, TRUE, TRUE, 2);
+
+    /* 7. Refresh Screen */
+    GtkWidget *btn_refresh = gtk_button_new_with_label("Refresh Screen (Clear E-Ink Ghosting)");
+    gtk_widget_modify_font(btn_refresh, bfont);
+    gtk_widget_set_size_request(btn_refresh, -1, 62);
+    g_signal_connect(btn_refresh, "clicked", G_CALLBACK(on_menu_btn_clicked), GINT_TO_POINTER(MENU_ACTION_REFRESH));
+    gtk_box_pack_start(GTK_BOX(vbox), btn_refresh, TRUE, TRUE, 2);
+
+    /* 8. Quit Gambatte */
+    GtkWidget *btn_quit = gtk_button_new_with_label("Quit Gambatte");
+    gtk_widget_modify_font(btn_quit, bfont);
+    gtk_widget_set_size_request(btn_quit, -1, 62);
+    g_signal_connect(btn_quit, "clicked", G_CALLBACK(on_menu_btn_clicked), GINT_TO_POINTER(MENU_ACTION_QUIT));
+    gtk_box_pack_start(GTK_BOX(vbox), btn_quit, TRUE, TRUE, 2);
+
+    pango_font_description_free(bfont);
+
+    gtk_widget_show_all(dialog);
+    gint action = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+
+    /* Dispatch Action */
+    switch (action) {
+        case MENU_ACTION_OPEN_ROM:
+            on_open(NULL, NULL);
+            break;
+
+        case MENU_ACTION_SAVE_STATE:
+            on_state_mode_click(NULL, GINT_TO_POINTER(STATE_MODE_SAVE));
+            break;
+
+        case MENU_ACTION_LOAD_STATE:
+            on_state_mode_click(NULL, GINT_TO_POINTER(STATE_MODE_LOAD));
+            break;
+
+        case MENU_ACTION_TOGGLE_SPEED:
+            speed_multiplier = (speed_multiplier == 1) ? 2 : 1;
+            if (was_ready && game.data) {
+                pthread_mutex_lock(&game_loop_mutex);
+                ready = TRUE;
+                pthread_mutex_unlock(&game_loop_mutex);
+            }
+            break;
+
+        case MENU_ACTION_END_GAME:
+            on_end_game();
+            break;
+
+        case MENU_ACTION_TOGGLE_THEME:
+            style_mode = (style_mode == STYLE_MODE_LIGHT) ? STYLE_MODE_DARK : STYLE_MODE_LIGHT;
+            apply_theme();
+            if (was_ready && game.data) {
+                pthread_mutex_lock(&game_loop_mutex);
+                ready = TRUE;
+                pthread_mutex_unlock(&game_loop_mutex);
+            }
+            break;
+
+        case MENU_ACTION_REFRESH:
+            on_refresh(NULL, NULL);
+            if (was_ready && game.data) {
+                pthread_mutex_lock(&game_loop_mutex);
+                ready = TRUE;
+                pthread_mutex_unlock(&game_loop_mutex);
+            }
+            break;
+
+        case MENU_ACTION_QUIT:
+            on_quit(NULL, NULL);
+            break;
+
+        case MENU_ACTION_CLOSE:
+        default:
+            if (was_ready && game.data) {
+                pthread_mutex_lock(&game_loop_mutex);
+                ready = TRUE;
+                pthread_mutex_unlock(&game_loop_mutex);
+            }
+            break;
+    }
 }
 
 void on_hamburger_click(GtkButton *button, gpointer user_data) {
-    if (!popup_menu) {
-        create_popup_menu(window);
-    }
-    gtk_menu_popup(GTK_MENU(popup_menu), NULL, NULL, NULL, NULL, 0, gtk_get_current_event_time());
+    show_fullscreen_menu(GTK_WINDOW(window));
 }
 
 static void init_gtk_and_window() {
