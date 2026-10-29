@@ -17,10 +17,16 @@ gtk_dep = dependency('gtk+-2.0', required: true)
 threads_dep = dependency('threads')
 m_dep = cc.find_library('m', required: false)
 
+gthread_dep = dependency('gthread-2.0', required: false)
+if not gthread_dep.found()
+  gthread_dep = cc.find_library('gthread-2.0', required: true)
+endif
+
 deps = [
   gtk_dep,
   threads_dep,
-  m_dep
+  m_dep,
+  gthread_dep
 ]
 
 # Libretro core: link libgambatte_libretro.a (statically built archive)
