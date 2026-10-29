@@ -969,185 +969,278 @@ static gpointer emulator_thread_fn(gpointer data) {
     return NULL;
 }
 
-// TODO refactor this 
-void on_open(GtkButton *button, gpointer user_data) {
-        fprintf(stderr, "on_open\n");
+static const char *get_state_dir(void) {
+    static char s_dir[PATH_MAX] = {0};
+    if (s_dir[0] != 0) return s_dir;
 
-        pthread_mutex_lock(&game_loop_mutex);
-        
-        ready = FALSE; // use mutexes color?
-
-        char *game_path = simple_file_chooser_list(GTK_WINDOW(window));
-        g_print("Selected: %s\n", game_path);
-        if (game_path) {
-            g_print("game_path: %s\n", game_path);
-
-            if (!load_core()) {
-                g_print("Failed to load libretro core\n");
-                pthread_mutex_unlock(&game_loop_mutex);
-                g_free(game_path);
-                return;
-            }
-
-            if(game.data) {
-                if (retro_unload_game) retro_unload_game();
-                if (retro_reset) retro_reset();
-                if (retro_deinit) retro_deinit();
-                audio_backend_deinit(&ab);
-            }
-
-            if (retro_set_environment) retro_set_environment(environment_cb);
-            if (retro_set_video_refresh) retro_set_video_refresh(video_refresh);
-            if (retro_set_audio_sample_batch) retro_set_audio_sample_batch(audio_sample_batch);
-            if (retro_set_input_poll) retro_set_input_poll(input_poll);
-            if (retro_set_input_state) retro_set_input_state(input_state);
-
-            fprintf(stdout, "Loaded core symbols\n");
-
-            if (retro_init) retro_init();
-
-            g_print("game_path 2: %s\n", game_path);
- 
-
-            FILE *game_file = fopen(game_path, "rb");
-            if (!game_file) {
-                fprintf(stderr, "Failed to open game file\n");
-                pthread_mutex_unlock(&game_loop_mutex);
-                return;
-            }
-            fseek(game_file, 0, SEEK_END);
-            game.size = ftell(game_file);
-            fseek(game_file, 0, SEEK_SET);
-            game.data = malloc(game.size);
-            fread((void*)game.data, 1, game.size, game_file);
-            fclose(game_file);
-
-            if (!retro_load_game(&game)) {
-                fprintf(stderr, "Failed to load game\n");
-                pthread_mutex_unlock(&game_loop_mutex);
-                return;
-            }
-
-            struct retro_system_av_info av_info;
-            retro_get_system_av_info(&av_info);
-
-            audio_sample_rate = av_info.timing.sample_rate;
-            video_fps         = av_info.timing.fps;
-            frame_interval_us = (int) (1000000.0 / video_fps);
-
-            ab = audio_backend_init( 32760 );
-
-            g_print("Libretro core reports sample rate: %.2f Hz sample_rate:: %f fusec: %d \n", video_fps, audio_sample_rate, frame_interval_us );
-
-            g_atomic_int_set(&refresh_screen, 10);
-
-            // libretro.cpp:2589
-            char raw_name[17];
-            strncpy(raw_name, (const char*)game.data + 0x134, sizeof(raw_name) - 1);
-            raw_name[sizeof(raw_name) - 1] = '\0';
-
-            sanitize_filename(raw_name, internal_game_name, sizeof(internal_game_name));
-
-            g_print("internal_game_name: %s\n", internal_game_name);
-
-            if (title_label && internal_game_name[0] != 0) {
-                gtk_label_set_text(GTK_LABEL(title_label), internal_game_name);
-            }
-                        
-            ready = TRUE;
-        } else if (game.data) {
-            ready = TRUE;
+    if (g_file_test("/mnt/us/extensions/gambatte-k2/state", G_FILE_TEST_IS_DIR)) {
+        strncpy(s_dir, "/mnt/us/extensions/gambatte-k2/state", sizeof(s_dir) - 1);
+    } else if (g_file_test("./state", G_FILE_TEST_IS_DIR)) {
+        strncpy(s_dir, "./state", sizeof(s_dir) - 1);
+    } else {
+        if (g_file_test("/mnt/us/extensions/gambatte-k2", G_FILE_TEST_IS_DIR)) {
+            mkdir("/mnt/us/extensions/gambatte-k2/state", 0755);
+            strncpy(s_dir, "/mnt/us/extensions/gambatte-k2/state", sizeof(s_dir) - 1);
+        } else {
+            mkdir("./state", 0755);
+            strncpy(s_dir, "./state", sizeof(s_dir) - 1);
         }
-        pthread_mutex_unlock(&game_loop_mutex);
-        g_free(game_path);
+    }
+    return s_dir;
 }
 
-/////
+static void safely_unload_current_game(void) {
+    if (game.data) {
+        if (retro_unload_game) retro_unload_game();
+        if (retro_reset) retro_reset();
+        if (retro_deinit) retro_deinit();
+        audio_backend_deinit(&ab);
+        free((void*)game.data);
+        game.data = NULL;
+        game.size = 0;
+    }
+    pthread_mutex_lock(&pixbuf_mutex);
+    if (pixbuf) {
+        g_object_unref(pixbuf);
+        pixbuf = NULL;
+    }
+    PIXBUF_WIDTH = 0;
+    PIXBUF_HEIGHT = 0;
+    pthread_mutex_unlock(&pixbuf_mutex);
+}
+
+void on_open(GtkButton *button, gpointer user_data) {
+    fprintf(stderr, "on_open triggered\n");
+
+    /* 1. Pause current game if running */
+    pthread_mutex_lock(&game_loop_mutex);
+    gboolean was_ready = ready;
+    ready = FALSE;
+    pthread_mutex_unlock(&game_loop_mutex);
+
+    g_usleep(25000);
+
+    /* 2. Show file chooser WITHOUT holding lock */
+    char *game_path = simple_file_chooser_list(GTK_WINDOW(window));
+    g_print("Selected: %s\n", game_path ? game_path : "(null)");
+
+    if (!game_path) {
+        if (was_ready) {
+            pthread_mutex_lock(&game_loop_mutex);
+            ready = TRUE;
+            pthread_mutex_unlock(&game_loop_mutex);
+        }
+        return;
+    }
+
+    /* 3. Safely unload, close and free memory of previous game */
+    pthread_mutex_lock(&game_loop_mutex);
+    safely_unload_current_game();
+
+    if (!load_core()) {
+        g_print("Failed to load libretro core\n");
+        pthread_mutex_unlock(&game_loop_mutex);
+        g_free(game_path);
+        return;
+    }
+
+    /* Wire callbacks */
+    if (retro_set_environment) retro_set_environment(environment_cb);
+    if (retro_set_video_refresh) retro_set_video_refresh(video_refresh);
+    if (retro_set_audio_sample_batch) retro_set_audio_sample_batch(audio_sample_batch);
+    if (retro_set_input_poll) retro_set_input_poll(input_poll);
+    if (retro_set_input_state) retro_set_input_state(input_state);
+
+    if (retro_init) retro_init();
+
+    /* Read new game file */
+    FILE *game_file = fopen(game_path, "rb");
+    if (!game_file) {
+        fprintf(stderr, "Failed to open game file: %s\n", game_path);
+        pthread_mutex_unlock(&game_loop_mutex);
+        g_free(game_path);
+        return;
+    }
+    fseek(game_file, 0, SEEK_END);
+    game.size = ftell(game_file);
+    fseek(game_file, 0, SEEK_SET);
+    game.data = malloc(game.size);
+    if (!game.data) {
+        fclose(game_file);
+        fprintf(stderr, "Failed to allocate memory for game file\n");
+        pthread_mutex_unlock(&game_loop_mutex);
+        g_free(game_path);
+        return;
+    }
+    fread((void*)game.data, 1, game.size, game_file);
+    fclose(game_file);
+
+    if (!retro_load_game(&game)) {
+        fprintf(stderr, "Failed to load game: %s\n", game_path);
+        free((void*)game.data);
+        game.data = NULL;
+        game.size = 0;
+        pthread_mutex_unlock(&game_loop_mutex);
+        g_free(game_path);
+        return;
+    }
+
+    struct retro_system_av_info av_info;
+    retro_get_system_av_info(&av_info);
+
+    audio_sample_rate = av_info.timing.sample_rate;
+    video_fps         = av_info.timing.fps;
+    frame_interval_us = (int)(1000000.0 / video_fps);
+
+    ab = audio_backend_init(32760);
+
+    char raw_name[17];
+    strncpy(raw_name, (const char*)game.data + 0x134, sizeof(raw_name) - 1);
+    raw_name[sizeof(raw_name) - 1] = '\0';
+    sanitize_filename(raw_name, internal_game_name, sizeof(internal_game_name));
+
+    g_print("Loaded game: %s\n", internal_game_name);
+    if (title_label && internal_game_name[0] != 0) {
+        gtk_label_set_text(GTK_LABEL(title_label), internal_game_name);
+    }
+
+    ready = TRUE;
+    pthread_mutex_unlock(&game_loop_mutex);
+
+    g_free(game_path);
+    g_atomic_int_set(&refresh_screen, 10);
+}
+
 void save_state(const char *filename) {
     if (!retro_serialize_size || !retro_serialize) return;
     size_t size = retro_serialize_size();
     if (size == 0) return;
-    void *state = malloc(size);
-    if (!state) return;
-    if (retro_serialize(state, size)) {
-        // char abs_path[PATH_MAX];
-        // g_print("retro_serialize: \n");
-        // realpath(filename, abs_path);
-        // g_print("Saving state to: %s\n", abs_path);        
+
+    void *state_data = malloc(size);
+    if (!state_data) return;
+
+    if (retro_serialize(state_data, size)) {
         FILE *f = fopen(filename, "wb");
         if (f) {
-            fwrite(state, 1, size, f);
+            fwrite(state_data, 1, size, f);
+            fflush(f);
             fclose(f);
+            fprintf(stderr, "State saved successfully: %s (%zu bytes)\n", filename, size);
+        } else {
+            fprintf(stderr, "Failed to write state file: %s\n", filename);
         }
+    } else {
+        fprintf(stderr, "retro_serialize failed\n");
     }
-    free(state);
+    free(state_data);
 }
 
 void load_state(const char *filename) {
     if (!retro_serialize_size || !retro_unserialize) return;
     size_t size = retro_serialize_size();
     if (size == 0) return;
-    void *state = malloc(size);
-    if (!state) return;
+
     FILE *f = fopen(filename, "rb");
-    if (f) {
-        fread(state, 1, size, f);
-        fclose(f);
-        retro_unserialize(state, size);
+    if (!f) {
+        fprintf(stderr, "Failed to open state file: %s\n", filename);
+        return;
     }
-    free(state);
+    fseek(f, 0, SEEK_END);
+    size_t file_len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    void *state_data = malloc(size);
+    if (!state_data) {
+        fclose(f);
+        return;
+    }
+
+    size_t bytes_read = fread(state_data, 1, size, f);
+    fclose(f);
+
+    if (bytes_read == 0) {
+        free(state_data);
+        return;
+    }
+
+    /* Safely flush audio buffer before restoring state */
+    if (ab && ab->mixer_handle && MixerDrain) {
+        MixerDrain(ab->mixer_handle);
+    }
+
+    bool success = retro_unserialize(state_data, size);
+    free(state_data);
+
+    if (success) {
+        fprintf(stderr, "State loaded successfully: %s\n", filename);
+        /* Execute one frame to update display buffer immediately */
+        retro_run();
+        g_idle_add(trigger_drawing_redraw, NULL);
+        g_atomic_int_set(&refresh_screen, 10);
+    } else {
+        fprintf(stderr, "retro_unserialize failed for: %s\n", filename);
+    }
 }
 
 static void on_option_selected(GtkWidget *button, gpointer user_data) {
     int option = GPOINTER_TO_INT(user_data);
     GtkWidget *dialog = gtk_widget_get_toplevel(button);
-    
-    // Handle selected option (option 1-5)
-    g_print("Selected option: %d\n", option);
-    
-    // Close dialog
     gtk_dialog_response(GTK_DIALOG(dialog), option);
 }
 
 static int load_save_dialog(GtkWindow *parent, StateFileEntry *entries, int action) {
+    const char *title_text = (action == STATE_MODE_SAVE) ? "Save Game State" : "Load Game State";
+
     GtkWidget *dialog = gtk_dialog_new_with_buttons(
-       "L:A_D:application_ID:gambatteLoadSaveDialog",
+        "L:A_N:application_ID:gambatte_PC:N",
         parent,
         GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
-        GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,        
+        "  CANCEL  ", GTK_RESPONSE_CANCEL,
         NULL
     );
-    
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 300, 400);
+
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 860, 960);
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ALWAYS);
+
     GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-    gtk_container_set_border_width(GTK_CONTAINER(content_area), 15);
-    GtkWidget *padding_frame = gtk_alignment_new(0.5, 0.5, 1.0, 1.0);
-    gtk_alignment_set_padding(GTK_ALIGNMENT(padding_frame), 15, 15, 20, 20);  // Top, bottom, left, right
-    gtk_container_add(GTK_CONTAINER(content_area), padding_frame);
-    GtkWidget *vbox = gtk_vbox_new(TRUE, 10);
-    gtk_container_add(GTK_CONTAINER(padding_frame), vbox);
-    
+    gtk_container_set_border_width(GTK_CONTAINER(content_area), 24);
+
+    GtkWidget *header_label = gtk_label_new(title_text);
+    PangoFontDescription *hdr_font = pango_font_description_from_string("Sans Bold 18");
+    gtk_widget_modify_font(header_label, hdr_font);
+    pango_font_description_free(hdr_font);
+    gtk_box_pack_start(GTK_BOX(content_area), header_label, FALSE, FALSE, 14);
+
+    GtkWidget *vbox = gtk_vbox_new(TRUE, 16);
+    gtk_box_pack_start(GTK_BOX(content_area), vbox, TRUE, TRUE, 10);
+
     for (int i = 0; i < MAX_STATE_FILES; i++) {
         gchar *label;
-
         if (entries[i].exists) {
-            label = g_strdup_printf("slot %d: %s", i + 1, entries[i].modified_time);
+            label = g_strdup_printf("Slot %d:   %s", i + 1, entries[i].modified_time);
         } else {
-            label = g_strdup_printf("slot %d: (empty)", i + 1);
+            label = g_strdup_printf("Slot %d:   [Empty Slot]", i + 1);
         }
 
         GtkWidget *btn = gtk_button_new_with_label(label);
-        
-        if (action == STATE_MODE_SAVE || (action == STATE_MODE_LOAD && entries[i].exists) )
-            g_signal_connect(btn, "clicked", G_CALLBACK(on_option_selected), GINT_TO_POINTER(i));
+        PangoFontDescription *btn_font = pango_font_description_from_string("Sans Bold 16");
+        gtk_widget_modify_font(btn, btn_font);
+        pango_font_description_free(btn_font);
 
-        gtk_box_pack_start(GTK_BOX(vbox), btn, FALSE, FALSE, 0);
+        gtk_widget_set_size_request(btn, -1, 72);
+
+        if (action == STATE_MODE_SAVE || (action == STATE_MODE_LOAD && entries[i].exists)) {
+            g_signal_connect(btn, "clicked", G_CALLBACK(on_option_selected), GINT_TO_POINTER(i));
+        } else {
+            gtk_widget_set_sensitive(btn, FALSE);
+        }
+
+        gtk_box_pack_start(GTK_BOX(vbox), btn, TRUE, TRUE, 4);
         g_free(label);
     }
-    
-    // Show and run dialog
+
     gtk_widget_show_all(dialog);
-    gint res = gtk_dialog_run(GTK_DIALOG(dialog)); 
+    gint res = gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
     return res;
 }
@@ -1164,45 +1257,57 @@ void sanitize_filename(const char *input, char *output, size_t maxlen) {
 }
 
 void on_state_mode_click(GtkButton *button, gpointer user_data) {
-    
-    int action = GPOINTER_TO_INT (user_data);
-    
-    pthread_mutex_lock(&game_loop_mutex);
-    
-    // ready = FALSE; // use mutexes color?
+    int action = GPOINTER_TO_INT(user_data);
 
+    if (!ready || internal_game_name[0] == 0 || !game.data) {
+        fprintf(stderr, "Cannot %s state: No game is currently loaded\n",
+                action == STATE_MODE_SAVE ? "save" : "load");
+        return;
+    }
+
+    pthread_mutex_lock(&game_loop_mutex);
+    gboolean was_ready = ready;
+    ready = FALSE;
+    pthread_mutex_unlock(&game_loop_mutex);
+
+    g_usleep(25000);
+
+    const char *s_dir = get_state_dir();
     StateFileEntry entries[MAX_STATE_FILES];
 
     for (int i = 0; i < MAX_STATE_FILES; ++i) {
-        snprintf(entries[i].filename, MAX_FILENAME_LEN, "./state/%s.%d", internal_game_name, i + 1);
+        snprintf(entries[i].filename, MAX_FILENAME_LEN, "%s/%s.%d", s_dir, internal_game_name, i + 1);
 
         struct stat st;
-        if (stat(entries[i].filename, &st) == 0) {
-            time_t time = st.st_mtime;
-            struct tm * stime = localtime(&time);
-            strftime(entries[i].modified_time, 2048, "%Y-%m-%d %H:%M", stime);
+        if (stat(entries[i].filename, &st) == 0 && st.st_size > 0) {
+            time_t time_val = st.st_mtime;
+            struct tm *stime = localtime(&time_val);
+            strftime(entries[i].modified_time, sizeof(entries[i].modified_time), "%Y-%m-%d %H:%M", stime);
             entries[i].exists = 1;
         } else {
             entries[i].exists = 0;
-        }        
-
-        g_print("file %s %d %s\n", entries[i].filename, entries[i].exists, entries[i].modified_time);
+            entries[i].modified_time[0] = 0;
+        }
     }
 
     gint res = load_save_dialog(GTK_WINDOW(window), entries, action);
-    
+
     if (res >= 0 && res < MAX_STATE_FILES) {
-        
-        if (action == STATE_MODE_LOAD)
-            load_state( entries[res].filename );
-
-        if (action == STATE_MODE_SAVE)
-            save_state( entries[res].filename );
-
+        pthread_mutex_lock(&game_loop_mutex);
+        if (action == STATE_MODE_LOAD && entries[res].exists) {
+            load_state(entries[res].filename);
+        } else if (action == STATE_MODE_SAVE) {
+            save_state(entries[res].filename);
+        }
+        ready = TRUE;
+        pthread_mutex_unlock(&game_loop_mutex);
+    } else {
+        if (was_ready) {
+            pthread_mutex_lock(&game_loop_mutex);
+            ready = TRUE;
+            pthread_mutex_unlock(&game_loop_mutex);
+        }
     }
-    g_print("on_load option: %d\n", res);
-    
-    pthread_mutex_unlock(&game_loop_mutex); // ready = TRUE;
 }
 
 void on_refresh(GtkButton *button, gpointer user_data) {
