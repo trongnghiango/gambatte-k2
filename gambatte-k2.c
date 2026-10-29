@@ -141,9 +141,9 @@ static bool load_core(void) {
 static char internal_game_name[17];
 
 // GTK widgets
-static GtkWidget *window, *border_box, *drawing_area, *drawing_area_container, *joystick_area;
-static GtkWidget *load_btn, *save_btn;
-static GtkWidget *gtk_toggle, *fbink_toggle, *options_box;
+static GtkWidget *window, *drawing_area, *drawing_area_container, *joystick_area;
+static GtkWidget *hamburger_btn = NULL, *title_label = NULL;
+static GtkWidget *popup_menu = NULL;
 static volatile gint drawing_area_abs_x = 0, drawing_area_abs_y = 0;
 static volatile gint joystick_area_abs_x = 0, joystick_area_abs_y = 0;
 static int PIXBUF_WIDTH = 0, PIXBUF_HEIGHT = 0;
@@ -415,6 +415,18 @@ static void input_poll(void){
             }
         }
     }
+
+    static int prev_button_state[GB_BUTTON_COUNT] = {0};
+    gboolean state_changed = FALSE;
+    for (int i = 0; i < GB_BUTTON_COUNT; ++i) {
+        if (gb_button_state[i] != prev_button_state[i]) {
+            prev_button_state[i] = gb_button_state[i];
+            state_changed = TRUE;
+        }
+    }
+    if (state_changed && joystick_area) {
+        gtk_widget_queue_draw(joystick_area);
+    }
 }
 
 // input state | gambatte thread
@@ -455,72 +467,281 @@ static void on_area_configure_event(GtkWidget *widget, GdkEvent *event, gpointer
         gtk_widget_get_allocation(widget, &allocation);
         int w = allocation.width;
         int h = allocation.height;
- 
-        // scale and position buttons proportionally
-        for (int i = 0; i < GB_BUTTON_COUNT; ++i) {
-            g_atomic_int_set(&gb_button_regions[i].x, (gint) (gb_button_regions[i].rel_x * w));
-            g_atomic_int_set(&gb_button_regions[i].y, (gint) (gb_button_regions[i].rel_y * h));
-            g_atomic_int_set(&gb_button_regions[i].r, (gint) (gb_button_regions[i].rel_r * w));
-            g_atomic_int_set(&gb_button_regions[i].w, (gint) (gb_button_regions[i].rel_w * w));
-            g_atomic_int_set(&gb_button_regions[i].h, (gint) (gb_button_regions[i].rel_h * w));
-        }
 
-        fprintf(stdout, "joystick_area area abs pos: %4d %4d (w:%4d h:%4d)\n", abs_x, abs_y, w, h);
+        double dpad_cx = w * 0.22;
+        double dpad_cy = h * 0.46;
+        double dpad_petal_h = h * 0.20;
+        double dpad_gap = w * 0.015;
+        double dpad_dist = dpad_gap + dpad_petal_h * 0.55;
+        int dpad_hitbox_r = (int)(dpad_petal_h * 0.60);
+
+        // UP
+        g_atomic_int_set(&gb_button_regions[GB_UP].x, (int)dpad_cx);
+        g_atomic_int_set(&gb_button_regions[GB_UP].y, (int)(dpad_cy - dpad_dist));
+        g_atomic_int_set(&gb_button_regions[GB_UP].r, dpad_hitbox_r);
+
+        // DOWN
+        g_atomic_int_set(&gb_button_regions[GB_DOWN].x, (int)dpad_cx);
+        g_atomic_int_set(&gb_button_regions[GB_DOWN].y, (int)(dpad_cy + dpad_dist));
+        g_atomic_int_set(&gb_button_regions[GB_DOWN].r, dpad_hitbox_r);
+
+        // LEFT
+        g_atomic_int_set(&gb_button_regions[GB_LEFT].x, (int)(dpad_cx - dpad_dist));
+        g_atomic_int_set(&gb_button_regions[GB_LEFT].y, (int)dpad_cy);
+        g_atomic_int_set(&gb_button_regions[GB_LEFT].r, dpad_hitbox_r);
+
+        // RIGHT
+        g_atomic_int_set(&gb_button_regions[GB_RIGHT].x, (int)(dpad_cx + dpad_dist));
+        g_atomic_int_set(&gb_button_regions[GB_RIGHT].y, (int)dpad_cy);
+        g_atomic_int_set(&gb_button_regions[GB_RIGHT].r, dpad_hitbox_r);
+
+        // B
+        g_atomic_int_set(&gb_button_regions[GB_B].x, (int)(w * 0.72));
+        g_atomic_int_set(&gb_button_regions[GB_B].y, (int)(h * 0.54));
+        g_atomic_int_set(&gb_button_regions[GB_B].r, (int)(w * 0.055));
+
+        // A
+        g_atomic_int_set(&gb_button_regions[GB_A].x, (int)(w * 0.86));
+        g_atomic_int_set(&gb_button_regions[GB_A].y, (int)(h * 0.36));
+        g_atomic_int_set(&gb_button_regions[GB_A].r, (int)(w * 0.055));
+
+        // SELECT
+        g_atomic_int_set(&gb_button_regions[GB_SELECT].x, (int)(w * 0.44));
+        g_atomic_int_set(&gb_button_regions[GB_SELECT].y, (int)(h * 0.86));
+        g_atomic_int_set(&gb_button_regions[GB_SELECT].r, 52);
+
+        // START
+        g_atomic_int_set(&gb_button_regions[GB_START].x, (int)(w * 0.56));
+        g_atomic_int_set(&gb_button_regions[GB_START].y, (int)(h * 0.86));
+        g_atomic_int_set(&gb_button_regions[GB_START].r, 52);
+
+        fprintf(stdout, "joystick_area abs pos: %4d %4d (w:%4d h:%4d)\n", abs_x, abs_y, w, h);
     }
 }
 
-static gboolean gb_controls_draw(GtkWidget * widget, GdkEventExpose *event, gpointer data) {
-    // Draw Gameboy background
-    fprintf(stdout, "gb_controls_draw\n");
+static void draw_dpad_petal(cairo_t *cr, double cx, double cy, double petal_w, double petal_h, double center_gap, double r, double angle_rad, gboolean pressed, StyleMode mode) {
+    cairo_save(cr);
+    cairo_translate(cr, cx, cy);
+    cairo_rotate(cr, angle_rad);
 
+    double y_tip = -center_gap;
+    double y_sh = -(center_gap + petal_h * 0.40);
+    double y_top = -(center_gap + petal_h);
+    double x_w = petal_w / 2.0;
+
+    cairo_new_path(cr);
+    cairo_arc(cr, x_w - r, y_top + r, r, -M_PI / 2.0, 0);
+    cairo_line_to(cr, x_w, y_sh);
+    cairo_line_to(cr, 0, y_tip);
+    cairo_line_to(cr, -x_w, y_sh);
+    cairo_line_to(cr, -x_w, y_top + r);
+    cairo_arc(cr, -x_w + r, y_top + r, r, M_PI, 3.0 * M_PI / 2.0);
+    cairo_close_path(cr);
+
+    if (pressed) {
+        if (mode == STYLE_MODE_LIGHT) {
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+            cairo_fill_preserve(cr);
+            cairo_set_line_width(cr, 3.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        } else {
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+            cairo_fill_preserve(cr);
+            cairo_set_line_width(cr, 3.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+        }
+    } else {
+        if (mode == STYLE_MODE_LIGHT) {
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+            cairo_fill_preserve(cr);
+            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+            cairo_set_line_width(cr, 3.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        } else {
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+            cairo_fill_preserve(cr);
+            cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
+            cairo_set_line_width(cr, 3.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
+        }
+    }
+
+    double c_y = (y_top + y_sh) / 2.0;
+    double c_w = petal_w * 0.22;
+    double c_h = petal_h * 0.16;
+
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+    cairo_set_line_width(cr, 3.5);
+
+    cairo_move_to(cr, -c_w, c_y + c_h * 0.4);
+    cairo_line_to(cr, 0, c_y - c_h * 0.6);
+    cairo_line_to(cr, c_w, c_y + c_h * 0.4);
+    cairo_stroke(cr);
+
+    cairo_restore(cr);
+}
+
+static void draw_action_button(cairo_t *cr, double cx, double cy, double radius, const char *label, gboolean pressed, StyleMode mode) {
+    cairo_new_path(cr);
+    cairo_arc(cr, cx, cy, radius, 0, 2 * M_PI);
+
+    if (pressed) {
+        if (mode == STYLE_MODE_LIGHT) {
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+            cairo_fill_preserve(cr);
+            cairo_set_line_width(cr, 3.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        } else {
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+            cairo_fill_preserve(cr);
+            cairo_set_line_width(cr, 3.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+        }
+    } else {
+        if (mode == STYLE_MODE_LIGHT) {
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+            cairo_fill_preserve(cr);
+            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+            cairo_set_line_width(cr, 3.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+        } else {
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+            cairo_fill_preserve(cr);
+            cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
+            cairo_set_line_width(cr, 3.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.9, 0.9, 0.9);
+        }
+    }
+
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, radius * 0.65);
+    cairo_text_extents_t te;
+    cairo_text_extents(cr, label, &te);
+    cairo_move_to(cr, cx - te.width / 2.0 - te.x_bearing, cy + te.height / 2.0);
+    cairo_show_text(cr, label);
+}
+
+static void draw_capsule_button(cairo_t *cr, double cx, double cy, double w, double h, const char *label, gboolean pressed, StyleMode mode) {
+    double r = h / 2.0;
+    double x0 = cx - w / 2.0;
+    double y0 = cy - h / 2.0;
+
+    cairo_new_path(cr);
+    cairo_arc(cr, x0 + w - r, y0 + r, r, -M_PI / 2.0, M_PI / 2.0);
+    cairo_arc(cr, x0 + r, y0 + r, r, M_PI / 2.0, 3.0 * M_PI / 2.0);
+    cairo_close_path(cr);
+
+    if (pressed) {
+        if (mode == STYLE_MODE_LIGHT) {
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+            cairo_fill_preserve(cr);
+            cairo_set_line_width(cr, 2.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        } else {
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+            cairo_fill_preserve(cr);
+            cairo_set_line_width(cr, 2.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+        }
+    } else {
+        if (mode == STYLE_MODE_LIGHT) {
+            cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+            cairo_fill_preserve(cr);
+            cairo_set_source_rgb(cr, 0.2, 0.2, 0.2);
+            cairo_set_line_width(cr, 2.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.2, 0.2, 0.2);
+        } else {
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+            cairo_fill_preserve(cr);
+            cairo_set_source_rgb(cr, 0.8, 0.8, 0.8);
+            cairo_set_line_width(cr, 2.0);
+            cairo_stroke(cr);
+            cairo_set_source_rgb(cr, 0.8, 0.8, 0.8);
+        }
+    }
+
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 13.0);
+    cairo_text_extents_t te;
+    cairo_text_extents(cr, label, &te);
+    cairo_move_to(cr, cx - te.width / 2.0 - te.x_bearing, cy + te.height / 2.0);
+    cairo_show_text(cr, label);
+}
+
+static gboolean gb_controls_draw(GtkWidget *widget, GdkEventExpose *event, gpointer data) {
     GtkAllocation alloc;
     gtk_widget_get_allocation(widget, &alloc);
     int width = alloc.width;
-    int height = alloc.height;    
+    int height = alloc.height;
 
     GdkWindow *win = gtk_widget_get_window(widget);
     cairo_t *cr = gdk_cairo_create(win);
+
     if (style_mode == STYLE_MODE_LIGHT) {
-        cairo_set_source_rgb(cr, 255, 255, 255);
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
     } else {
-        cairo_set_source_rgb(cr,   0,   0,   0);
+        cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     }
     cairo_paint(cr);
 
-    // Draw buttons
-    for (int i = 0; i < GB_BUTTON_COUNT; ++i) {
-        GbButtonRegion *btn = &gb_button_regions[i]; // TODO thread safety.
-        // if (gb_buttons[i])  // we could highlight the button if pressed but slows down the refreshing
-        cairo_new_path(cr);
-        cairo_set_source_rgb(cr, 255, 255, 255);
-
-        if (btn->geometry == GB_BUTTON_RECT) {
-            cairo_rectangle(cr, btn->x - btn->w / 2, btn->y - btn->h / 2, btn->w, btn->h);
-        } else {
-            cairo_arc(cr, btn->x, btn->y, btn->r, 0, 2*M_PI);
-        }
-        cairo_fill_preserve(cr);
-
-        if (style_mode == STYLE_MODE_LIGHT) {
-            cairo_set_source_rgb(cr,   0,   0,   0);
-        } else {
-            cairo_set_source_rgb(cr, 255, 255, 255);
-        }
-        cairo_set_line_width(cr, 5.0);     // border thickness
-        cairo_stroke(cr);
-
-        // Draw label
-        cairo_text_extents_t te;
-        cairo_text_extents (cr, btn->label, &te);
-
-        cairo_set_source_rgb(cr, 0, 0, 0);
-        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-        cairo_set_font_size(cr, width * 0.03);
-        cairo_move_to(cr,
-            btn->x - te.width / 2 - te.x_bearing,
-            btn->y + te.height / 2);            
-        cairo_show_text(cr, btn->label);
+    // Subtle top border divider line
+    if (style_mode == STYLE_MODE_LIGHT) {
+        cairo_set_source_rgb(cr, 0.88, 0.88, 0.88);
+    } else {
+        cairo_set_source_rgb(cr, 0.22, 0.22, 0.22);
     }
+    cairo_set_line_width(cr, 1.0);
+    cairo_move_to(cr, 0, 0);
+    cairo_line_to(cr, width, 0);
+    cairo_stroke(cr);
+
+    // D-Pad
+    double dpad_cx = width * 0.22;
+    double dpad_cy = height * 0.46;
+    double petal_w = width * 0.075;
+    double petal_h = height * 0.20;
+    double center_gap = width * 0.015;
+    double r_corner = 14.0;
+
+    draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, 0, gb_button_state[GB_UP], style_mode);
+    draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, M_PI / 2.0, gb_button_state[GB_RIGHT], style_mode);
+    draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, M_PI, gb_button_state[GB_DOWN], style_mode);
+    draw_dpad_petal(cr, dpad_cx, dpad_cy, petal_w, petal_h, center_gap, r_corner, 3.0 * M_PI / 2.0, gb_button_state[GB_LEFT], style_mode);
+
+    // Action Buttons A and B
+    double btn_b_x = width * 0.72;
+    double btn_b_y = height * 0.54;
+    double btn_a_x = width * 0.86;
+    double btn_a_y = height * 0.36;
+    double btn_r = width * 0.044;
+
+    draw_action_button(cr, btn_b_x, btn_b_y, btn_r, "B", gb_button_state[GB_B], style_mode);
+    draw_action_button(cr, btn_a_x, btn_a_y, btn_r, "A", gb_button_state[GB_A], style_mode);
+
+    // Capsule Buttons SELECT and START
+    double sel_x = width * 0.44;
+    double sel_y = height * 0.86;
+    double sta_x = width * 0.56;
+    double sta_y = height * 0.86;
+    double cap_w = 88.0;
+    double cap_h = 28.0;
+
+    draw_capsule_button(cr, sel_x, sel_y, cap_w, cap_h, "SELECT", gb_button_state[GB_SELECT], style_mode);
+    draw_capsule_button(cr, sta_x, sta_y, cap_w, cap_h, "START", gb_button_state[GB_START], style_mode);
+
+    cairo_destroy(cr);
     return FALSE;
 }
 
@@ -853,8 +1074,9 @@ void on_open(GtkButton *button, gpointer user_data) {
 
             g_print("internal_game_name: %s\n", internal_game_name);
 
-            gtk_widget_show(load_btn);
-            gtk_widget_show(save_btn);
+            if (title_label && internal_game_name[0] != 0) {
+                gtk_label_set_text(GTK_LABEL(title_label), internal_game_name);
+            }
                         
             ready = TRUE;
         } else if (game.data) {
@@ -1027,120 +1249,164 @@ void on_quit(GtkButton *button, gpointer user_data) {
     running = FALSE; // Signal the thread to stop
     gtk_main_quit();
 }
-
-void on_draw_mode_toggle(GtkToggleButton *button, gpointer user_data) {
-    fprintf(stderr, "on_draw_mode_toggle\n");
-    int action = GPOINTER_TO_INT (user_data);
-    g_signal_handlers_block_by_func (G_OBJECT(gtk_toggle), G_CALLBACK(on_draw_mode_toggle), GINT_TO_POINTER (DRAW_MODE_GTK));
-    g_signal_handlers_block_by_func (G_OBJECT(fbink_toggle), G_CALLBACK(on_draw_mode_toggle), GINT_TO_POINTER (DRAW_MODE_FBINK));
-    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(gtk_toggle), action == DRAW_MODE_GTK );
-    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(fbink_toggle), action == DRAW_MODE_FBINK );
-    g_signal_handlers_unblock_by_func (G_OBJECT(gtk_toggle), G_CALLBACK(on_draw_mode_toggle), GINT_TO_POINTER (DRAW_MODE_GTK));
-    g_signal_handlers_unblock_by_func (G_OBJECT(fbink_toggle), G_CALLBACK(on_draw_mode_toggle), GINT_TO_POINTER (DRAW_MODE_FBINK));
-
-    g_mutex_lock(pixbuf_mutex);    
-    draw_mode = action;
-    kill_the_ghost = 1;
-    g_mutex_unlock(pixbuf_mutex); 
-
+static void on_save_state_click(GtkMenuItem *item, gpointer user_data) {
+    on_state_mode_click(NULL, GINT_TO_POINTER(STATE_MODE_SAVE));
 }
 
-void on_toggle_style(GtkToggleButton *toggle, gpointer window) {
+static void on_load_state_click(GtkMenuItem *item, gpointer user_data) {
+    on_state_mode_click(NULL, GINT_TO_POINTER(STATE_MODE_LOAD));
+}
 
-    GdkColor white_color, black_color;
-    gdk_color_parse("#FFFFFF", &white_color);
-    gdk_color_parse("#000000", &black_color);
+static void apply_theme(void) {
+    GdkColor bg_color, fg_color;
+    if (style_mode == STYLE_MODE_DARK) {
+        gdk_color_parse("#000000", &bg_color);
+        gdk_color_parse("#FFFFFF", &fg_color);
+    } else {
+        gdk_color_parse("#FFFFFF", &bg_color);
+        gdk_color_parse("#000000", &fg_color);
+    }
 
-    style_mode = gtk_toggle_button_get_active(toggle) ? STYLE_MODE_LIGHT : STYLE_MODE_DARK;
+    if (window) gtk_widget_modify_bg(window, GTK_STATE_NORMAL, &bg_color);
+    if (drawing_area) gtk_widget_modify_bg(drawing_area, GTK_STATE_NORMAL, &bg_color);
+    if (drawing_area_container) gtk_widget_modify_bg(drawing_area_container, GTK_STATE_NORMAL, &bg_color);
+    if (joystick_area) gtk_widget_modify_bg(joystick_area, GTK_STATE_NORMAL, &bg_color);
+    if (hamburger_btn) {
+        gtk_widget_modify_bg(hamburger_btn, GTK_STATE_NORMAL, &bg_color);
+        gtk_widget_modify_fg(hamburger_btn, GTK_STATE_NORMAL, &fg_color);
+    }
+    if (title_label) {
+        gtk_widget_modify_fg(title_label, GTK_STATE_NORMAL, &fg_color);
+    }
 
-    gtk_widget_modify_bg(window, GTK_STATE_NORMAL,                 style_mode == STYLE_MODE_DARK ? &black_color : &white_color);
-    gtk_widget_modify_bg(drawing_area, GTK_STATE_NORMAL,           style_mode == STYLE_MODE_DARK ? &black_color : &white_color);
-    gtk_widget_modify_bg(drawing_area_container, GTK_STATE_NORMAL, style_mode == STYLE_MODE_DARK ? &white_color : &black_color);
-
-    gtk_widget_queue_draw(GTK_WIDGET(window));
+    if (window) gtk_widget_queue_draw(window);
+    if (joystick_area) gtk_widget_queue_draw(joystick_area);
     g_atomic_int_set(&refresh_screen, 30);
 }
 
+static void on_toggle_theme_click(GtkMenuItem *item, gpointer user_data) {
+    style_mode = (style_mode == STYLE_MODE_LIGHT) ? STYLE_MODE_DARK : STYLE_MODE_LIGHT;
+    apply_theme();
+}
 
+static void create_popup_menu(GtkWidget *win) {
+    popup_menu = gtk_menu_new();
+
+    GtkWidget *item_open = gtk_menu_item_new_with_label("📂  Open ROM...");
+    g_signal_connect(item_open, "activate", G_CALLBACK(on_open), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_open);
+
+    GtkWidget *item_save = gtk_menu_item_new_with_label("💾  Save State");
+    g_signal_connect(item_save, "activate", G_CALLBACK(on_save_state_click), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_save);
+
+    GtkWidget *item_load = gtk_menu_item_new_with_label("📥  Load State");
+    g_signal_connect(item_load, "activate", G_CALLBACK(on_load_state_click), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_load);
+
+    GtkWidget *sep1 = gtk_separator_menu_item_new();
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), sep1);
+
+    GtkWidget *item_theme = gtk_menu_item_new_with_label("🌓  Toggle Light / Dark");
+    g_signal_connect(item_theme, "activate", G_CALLBACK(on_toggle_theme_click), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_theme);
+
+    GtkWidget *item_refresh = gtk_menu_item_new_with_label("🔄  Refresh Screen");
+    g_signal_connect(item_refresh, "activate", G_CALLBACK(on_refresh), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_refresh);
+
+    GtkWidget *sep2 = gtk_separator_menu_item_new();
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), sep2);
+
+    GtkWidget *item_quit = gtk_menu_item_new_with_label("❌  Quit");
+    g_signal_connect(item_quit, "activate", G_CALLBACK(on_quit), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(popup_menu), item_quit);
+
+    gtk_widget_show_all(popup_menu);
+}
+
+void on_hamburger_click(GtkButton *button, gpointer user_data) {
+    if (!popup_menu) {
+        create_popup_menu(window);
+    }
+    gtk_menu_popup(GTK_MENU(popup_menu), NULL, NULL, NULL, NULL, 0, gtk_get_current_event_time());
+}
 
 static void init_gtk_and_window() {
-
     gtk_rc_parse_string(
         "style \"custom-button\" {\n"
         "  bg[NORMAL]      = \"#FFFFFF\"\n"
         "  fg[NORMAL]      = \"#000000\"\n"
         "  bg[ACTIVE]      = \"#000000\"\n"
         "  fg[ACTIVE]      = \"#FFFFFF\"\n"
-        "  bg[SELECTED]    = \"#FFFF00\"\n"
-        "  fg[SELECTED]    = \"#FF00FF\"\n"
         "  bg[PRELIGHT]    = \"#FFFFFF\"\n"
         "  fg[PRELIGHT]    = \"#000000\"\n"
-        "  xthickness = 0\n"
-        "  ythickness = 10\n"
-        "  font_name = \"Sans Bold 8\"\n"
+        "  xthickness = 4\n"
+        "  ythickness = 4\n"
+        "  font_name = \"Sans Bold 14\"\n"
         "  GtkWidget::focus-line-width = 0\n"
         "  GtkWidget::focus-padding = 0\n"
-        "  engine \"pixmap\" {}\n"
+        "}\n"
+        "style \"menu-style\" {\n"
+        "  bg[NORMAL]   = \"#FFFFFF\"\n"
+        "  fg[NORMAL]   = \"#000000\"\n"
+        "  bg[PRELIGHT] = \"#000000\"\n"
+        "  fg[PRELIGHT] = \"#FFFFFF\"\n"
+        "  font_name = \"Sans 13\"\n"
+        "  xthickness = 10\n"
+        "  ythickness = 8\n"
+        "}\n"
+        "style \"title-style\" {\n"
+        "  fg[NORMAL] = \"#000000\"\n"
+        "  font_name = \"Sans Bold 10\"\n"
         "}\n"
         "style \"white-dialog\" {\n"
         "  bg[NORMAL] = \"#FFFFFF\"\n"
         "  fg[NORMAL] = \"#000000\"\n"
         "  font_name = \"Sans 12\"\n"
         "  xthickness = 20\n"
-        "  ythickness = 20\n"        
-        "}\n"        
-        "widget_class \"*GtkButton\" style \"custom-button\"\n"
-        "widget_class \"*GtkToggleButton\" style \"custom-button\"\n"
-        "widget_class \"*GtkLabel\" style \"custom-button\"\n"
-        "widget_class \"*GtkDialog\" style \"white-dialog\"\n"        
-    ); 
+        "  ythickness = 20\n"
+        "}\n"
+        "widget \"*hamburger_btn*\" style \"custom-button\"\n"
+        "widget \"*title_label*\" style \"title-style\"\n"
+        "widget_class \"*GtkMenuItem*\" style \"menu-style\"\n"
+        "widget_class \"*GtkMenu*\" style \"menu-style\"\n"
+        "widget_class \"*GtkDialog\" style \"white-dialog\"\n"
+    );
 
-    //       
     GtkBuilder *builder = gtk_builder_new();
     GError *error = NULL;
 
-    // Load UI from the xxd-generated header
     if (!gtk_builder_add_from_string(builder, (const gchar *)main_ui, main_ui_len, &error)) {
         g_error("Failed to load UI: %s", error->message);
         g_error_free(error);
         return;
     }
 
-    // Connect signals
     gtk_builder_connect_signals(builder, NULL);
 
-    // Get widgets by ID
     window         = GTK_WIDGET(gtk_builder_get_object(builder, "main_window"));
     drawing_area   = GTK_WIDGET(gtk_builder_get_object(builder, "drawing_area"));
-    joystick_area  = GTK_WIDGET(gtk_builder_get_object(builder, "joystick_area"));
-    gtk_toggle     = GTK_WIDGET(gtk_builder_get_object(builder, "gtk_toggle"));
-    fbink_toggle   = GTK_WIDGET(gtk_builder_get_object(builder, "fbink_toggle"));
-
-    load_btn       = GTK_WIDGET(gtk_builder_get_object(builder, "load_btn"));
-    save_btn       = GTK_WIDGET(gtk_builder_get_object(builder, "save_btn"));
-
-    GtkWidget *center_hbox            = GTK_WIDGET(gtk_builder_get_object(builder, "center_hbox"));
     drawing_area_container = GTK_WIDGET(gtk_builder_get_object(builder, "drawing_area_container"));
-    GtkWidget *style_toggle   = GTK_WIDGET(gtk_builder_get_object(builder, "style_toggle"));
+    joystick_area  = GTK_WIDGET(gtk_builder_get_object(builder, "joystick_area"));
+    hamburger_btn  = GTK_WIDGET(gtk_builder_get_object(builder, "hamburger_btn"));
+    title_label    = GTK_WIDGET(gtk_builder_get_object(builder, "title_label"));
+    GtkWidget *center_hbox = GTK_WIDGET(gtk_builder_get_object(builder, "center_hbox"));
 
-    // Set up signals not handled by Glade
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(drawing_area, "expose-event", G_CALLBACK(expose_event), NULL);
     g_signal_connect(drawing_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
     g_signal_connect(joystick_area, "expose-event", G_CALLBACK(gb_controls_draw), NULL);
     g_signal_connect(joystick_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
 
-    g_signal_connect(gtk_toggle, "toggled", G_CALLBACK(on_draw_mode_toggle), GINT_TO_POINTER(DRAW_MODE_GTK));
-    g_signal_connect(fbink_toggle, "toggled", G_CALLBACK(on_draw_mode_toggle), GINT_TO_POINTER(DRAW_MODE_FBINK));
-    g_signal_connect(load_btn, "clicked", G_CALLBACK(on_state_mode_click), GINT_TO_POINTER(STATE_MODE_LOAD));
-    g_signal_connect(save_btn, "clicked", G_CALLBACK(on_state_mode_click), GINT_TO_POINTER(STATE_MODE_SAVE));
+    if (hamburger_btn) {
+        g_signal_connect(hamburger_btn, "clicked", G_CALLBACK(on_hamburger_click), NULL);
+    }
 
-    g_signal_connect(style_toggle, "toggled", G_CALLBACK(on_toggle_style), window);
-    //g_signal_connect(window,       "destroy",       G_CALLBACK(on_area_destroy),       &state);
-    gtk_widget_set_name(window,                 "window");
-    gtk_widget_set_name(drawing_area,           "drawing_area");
+    gtk_widget_set_name(window, "window");
+    gtk_widget_set_name(drawing_area, "drawing_area");
     gtk_widget_set_name(drawing_area_container, "drawing_area_container");
-    gtk_widget_set_name(joystick_area,          "joystick_area");
+    gtk_widget_set_name(joystick_area, "joystick_area");
 
     GdkScreen *screen = gdk_screen_get_default();
     int screen_width  = gdk_screen_get_width(screen);
@@ -1149,13 +1415,6 @@ static void init_gtk_and_window() {
     gtk_window_set_title(GTK_WINDOW(window), "L:A_N:application_ID:gambatte_PC:N_O:URL_DM:PZ");
     gtk_window_fullscreen(GTK_WINDOW(window));
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
-    
-    GdkColor white_color, black_color;
-    gdk_color_parse("#FFFFFF", &white_color);
-    gdk_color_parse("#000000", &black_color);
-    gtk_widget_modify_bg(window, GTK_STATE_NORMAL,                 style_mode == STYLE_MODE_DARK ? &black_color : &white_color);
-    gtk_widget_modify_bg(drawing_area, GTK_STATE_NORMAL,           style_mode == STYLE_MODE_DARK ? &black_color : &white_color);
-    gtk_widget_modify_bg(drawing_area_container, GTK_STATE_NORMAL, style_mode == STYLE_MODE_DARK ? &white_color : &black_color);
 
     if (screen_width >= 1000) {
         SCALE_FACTOR_A = 6; /* Kindle Paperwhite 3 / Voyage / Oasis (1072x1448 -> 960x864) */
@@ -1164,23 +1423,17 @@ static void init_gtk_and_window() {
     } else {
         SCALE_FACTOR_A = 3; /* Kindle Touch / Basic (600x800 -> 480x432) */
     }
-    int center_hbox_heigth = SCALE_FACTOR_A * 144 + (2 * SCREEN_BORDER);
-    center_hbox_heigth     = center_hbox_heigth < screen_height / 2 ? screen_height / 2 : center_hbox_heigth;
 
-    gtk_widget_set_size_request(center_hbox, screen_width, center_hbox_heigth);
+    int center_hbox_height = SCALE_FACTOR_A * 144 + (2 * SCREEN_BORDER);
+    if (center_hbox) {
+        gtk_widget_set_size_request(center_hbox, screen_width, center_hbox_height);
+    }
     gtk_widget_set_size_request(drawing_area, 160 * SCALE_FACTOR_A, 144 * SCALE_FACTOR_A);
     gtk_widget_set_size_request(drawing_area_container, 160 * SCALE_FACTOR_A + SCREEN_BORDER * 2, 144 * SCALE_FACTOR_A + SCREEN_BORDER * 2);
+    gtk_widget_set_double_buffered(drawing_area, TRUE);
 
-    gtk_widget_set_double_buffered (drawing_area, TRUE);
-    
-    gtk_widget_set_no_show_all(load_btn, TRUE);
-    gtk_widget_set_no_show_all(save_btn, TRUE);
-
+    apply_theme();
     gtk_widget_show_all(window);
-
-    gtk_widget_hide(load_btn);
-    gtk_widget_hide(save_btn);
-
     g_object_unref(builder);
 }
 
