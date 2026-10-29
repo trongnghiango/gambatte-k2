@@ -109,13 +109,15 @@ jobs:
             make -j"$(nproc)" -f Makefile.libretro CC="$KINDLE_CC" CXX="$KINDLE_CXX" STATIC_LINKING=1
 
           mkdir -p "$GITHUB_WORKSPACE/cores"
-          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/libgambatte_libretro.a"
-          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro.so"
-          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armhf.so"
-          cp gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armel.so"
+          # Copy as both static archive (.a) and shared library (.so) with all name variants
+          cp -f gambatte_libretro.so "$GITHUB_WORKSPACE/cores/libgambatte_libretro.a"
+          cp -f gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro.a"
+          cp -f gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro.so"
+          cp -f gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armhf.so"
+          cp -f gambatte_libretro.so "$GITHUB_WORKSPACE/cores/gambatte_libretro-armel.so"
 
           echo "Compiled Gambatte core info:"
-          file "$GITHUB_WORKSPACE/cores/gambatte_libretro-armhf.so"
+          file "$GITHUB_WORKSPACE/cores/"*
           ls -lh "$GITHUB_WORKSPACE/cores/"
 
       - name: Build Gambatte-K2 frontend for Kindle ARMv7
@@ -125,7 +127,7 @@ jobs:
           rm -rf builddir_kindlehf
 
           meson setup --cross-file "$CROSS_FILE" builddir_kindlehf
-          ninja -C builddir_kindlehf -j 1 -v 2>&1 | tee /tmp/ninja.log
+          ninja -C builddir_kindlehf -j 1 -v 2>&1 | tee /tmp/ninja.log || (echo "=== NINJA BUILD FAILED ===" && cat /tmp/ninja.log && exit 1)
 
           if [ -n "${KINDLE_STRIP:-}" ] && [ -x "$KINDLE_STRIP" ]; then
             "$KINDLE_STRIP" builddir_kindlehf/gambatte-k2 || true

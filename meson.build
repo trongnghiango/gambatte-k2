@@ -37,11 +37,9 @@ deps = [
   xcb_shm_dep
 ]
 
-# Libretro core dependency
-# Looks in gambatte-source/ or cores/ or current dir
+# Libretro core: link libgambatte_libretro.a (statically built archive)
 core_dep = cc.find_library('gambatte_libretro',
   dirs: [
-    meson.current_source_dir() / 'gambatte-source',
     meson.current_source_dir() / 'cores',
     meson.current_source_dir()
   ],
@@ -70,6 +68,7 @@ executable(
   include_directories: [include_directories('.'), include_directories('include')],
   dependencies: deps,
   c_args: c_args,
+  link_args: ['-lstdc++'],
   export_dynamic: true,
   install: true
 )
