@@ -168,10 +168,6 @@ jobs:
           cat /tmp/ninja.log || true
           echo "=== MESON LOG ==="
           cat builddir_kindlehf/meson-logs/meson-log.txt || true
-          gh release delete "build-failure-log" --yes 2>/dev/null || true
-          gh release create "build-failure-log" /tmp/ninja.log builddir_kindlehf/meson-logs/meson-log.txt --title "Build Failure Log" --notes "Debug logs" || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build debug logs on failure
         if: failure()
